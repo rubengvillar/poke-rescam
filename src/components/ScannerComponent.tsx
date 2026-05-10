@@ -92,21 +92,35 @@ const ScannerContent = () => {
       const normalize = (str: string) => str.toUpperCase().replace(/[^A-Z0-9]/g, '').trim();
       const cleanName = normalize(normalizedText.split('\n')[0] || "");
       const cleanHP = normalizedText.match(/(\d+)\s*(HP|PS)/)?.[1] || "";
-      const cleanNum = normalizedText.match(/(\d+\/\d+)/)?.[1] || "";
+      const cleanNumMatch = normalizedText.match(/(\d+)\s*[\/\\]\s*(\d+)/);
+      const cleanNumOnly = cleanNumMatch ? cleanNumMatch[1] : (normalizedText.match(/(\d{2,3})/)?.[1] || "");
       
       let apiCard = null;
-      const cleanNumOnly = cleanNum.split('/')[0];
       
       try {
-        const response = await fetch(`https://api.pokemontcg.io/v2/cards?q=name:"${cleanName.toLowerCase()}" number:"${cleanNumOnly}"`);
-        const data = await response.json();
-        if (data.data && data.data.length > 0) {
-          apiCard = data.data[0];
+        // Attempt 1: Name + Number (Fuzzy name)
+        let response = await fetch(`https://api.pokemontcg.io/v2/cards?q=name:"*${cleanName.toLowerCase()}*" number:"${cleanNumOnly}"`);
+        let data = await response.json();
+        
+        if (!data.data || data.data.length === 0) {
+          // Attempt 2: Just Number (Most reliable for OCR)
+          response = await fetch(`https://api.pokemontcg.io/v2/cards?q=number:"${cleanNumOnly}"`);
+          data = await response.json();
+          if (data.data && data.data.length > 0) {
+            // Pick the one that matches name best
+            apiCard = data.data.find((c: any) => cleanName && c.name.toLowerCase().includes(cleanName.split(' ')[0].toLowerCase())) || data.data[0];
+          }
         } else {
-          const resDex = await fetch(`https://api.tcgdex.net/v2/en/cards?name=${cleanName.toLowerCase()}&localId=${cleanNumOnly}`);
+          apiCard = data.data[0];
+        }
+
+        if (!apiCard) {
+          // Attempt 3: TCGdex Fallback
+          const resDex = await fetch(`https://api.tcgdex.net/v2/en/cards?localId=${cleanNumOnly}`);
           const dataDex = await resDex.json();
           if (dataDex && dataDex.length > 0) {
-            const resFull = await fetch(`https://api.tcgdex.net/v2/en/cards/${dataDex[0].id}`);
+            const bestDex = dataDex.find((c: any) => cleanName && c.name.toLowerCase().includes(cleanName.split(' ')[0].toLowerCase())) || dataDex[0];
+            const resFull = await fetch(`https://api.tcgdex.net/v2/en/cards/${bestDex.id}`);
             const dexData = await resFull.json();
             apiCard = {
               id: dexData.id,
@@ -120,7 +134,7 @@ const ScannerContent = () => {
           }
         }
       } catch (err) {
-        console.error("API Fallback Error:", err);
+        console.error("API Error:", err);
       }
 
       const finalImage = originalImage || imageSrc;
