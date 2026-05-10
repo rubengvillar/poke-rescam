@@ -73,7 +73,7 @@ const ScannerContent = () => {
     setStream(null);
   };
 
-  const processImage = async (imageSrc: string, condition: number = 10, originalImage?: string) => {
+  const processImage = async (imageSrc: string, condition: number = 10, originalImage?: string, colorType: string = 'Unknown') => {
     setIsScanning(true);
     try {
       const { data: { text } } = await Tesseract.recognize(
@@ -115,12 +115,26 @@ const ScannerContent = () => {
           response = await fetch(`https://api.pokemontcg.io/v2/cards?q=number:"${cleanNumOnly}"`);
           data = await response.json();
           if (data.data && data.data.length > 0) {
-            // SCORING HEURISTIC: Match Name > HP > First
+            // SCORING HEURISTIC: Match Name > Type (Visual/OCR) > HP > First
             const scoredResults = data.data.map((c: any) => {
               let score = 0;
               const firstWord = cleanName.split(' ')[0].toLowerCase();
-              if (c.name.toLowerCase().includes(firstWord)) score += 10;
+              if (c.name.toLowerCase().includes(firstWord)) score += 20;
+              
+              // Type Match (OCR)
+              const cardTypes = (c.types || []).join(' ').toLowerCase();
+              const detectedType = foundType.toLowerCase();
+              if (detectedType !== 'unknown' && cardTypes.includes(detectedType)) score += 10;
+              
+              // Type Match (VISUAL COLOR)
+              const visualType = colorType.toLowerCase();
+              if (visualType !== 'unknown' && cardTypes.includes(visualType)) score += 15;
+              
               if (c.hp === cleanHP) score += 5;
+              
+              // Penalty for Energy if HP was detected
+              if (c.supertype === 'Energy' && cleanHP) score -= 25;
+              
               return { ...c, matchScore: score };
             });
             scoredResults.sort((a: any, b: any) => b.matchScore - a.matchScore);
@@ -239,6 +253,35 @@ const ScannerContent = () => {
     return Math.round(centeringScore + wearScore);
   };
 
+  const detectDominantColor = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+    // Sample a few points in the card body (center-ish)
+    const samples = [
+      { x: width * 0.5, y: height * 0.2 },
+      { x: width * 0.2, y: height * 0.5 },
+      { x: width * 0.8, y: height * 0.5 },
+      { x: width * 0.5, y: height * 0.8 }
+    ];
+    
+    let r = 0, g = 0, b = 0;
+    samples.forEach(s => {
+      const p = ctx.getImageData(s.x, s.y, 1, 1).data;
+      r += p[0]; g += p[1]; b += p[2];
+    });
+    r /= samples.length; g /= samples.length; b /= samples.length;
+
+    // Basic Color to Type Mapping
+    if (r > 200 && g > 180 && b < 150) return 'Lightning';
+    if (r > 150 && g < 100 && b < 100) return 'Fire';
+    if (r < 120 && g > 150 && b < 150) return 'Grass';
+    if (r < 150 && g > 150 && b > 200) return 'Water';
+    if (r > 120 && g < 100 && b > 150) return 'Psychic';
+    if (r > 100 && g > 80 && b < 60) return 'Fighting';
+    if (r < 80 && g < 80 && b < 80) return 'Darkness';
+    if (r > 150 && g > 150 && b > 150 && Math.abs(r-g) < 20) return 'Metal';
+    
+    return 'Colorless';
+  };
+
   const captureFromVideo = () => {
     if (!videoRef.current || !canvasRef.current) return;
     
@@ -264,6 +307,9 @@ const ScannerContent = () => {
     // 1. Draw the cropped image
     ctx.drawImage(video, startX, startY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
     
+    // DETECT COLOR TYPE
+    const colorType = detectDominantColor(ctx, cropWidth, cropHeight);
+
     // SAVE ORIGINAL for display (High Quality)
     const originalImage = canvas.toDataURL('image/jpeg', 1.0);
 
@@ -283,7 +329,7 @@ const ScannerContent = () => {
     
     // Filtered image for OCR
     const ocrImage = canvas.toDataURL('image/jpeg', 0.9);
-    processImage(ocrImage, condition, originalImage);
+    processImage(ocrImage, condition, originalImage, colorType);
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
