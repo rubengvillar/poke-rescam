@@ -139,8 +139,48 @@ export const DashboardComponent = () => {
           animate={{ opacity: 1, y: 0 }}
           className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8 mt-24 items-start"
         >
-          {/* Sidebar / Profile Section */}
-          <div className="lg:col-span-4 space-y-6">
+          {/* Main Actions Section - ORDER 1 ON MOBILE */}
+          <div className="lg:col-span-8 order-1 lg:order-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <ActionCard 
+              icon={<LayoutGrid className="text-orange-400" size={32} />}
+              title="Colección"
+              desc="Gestiona tus cartas"
+              gradient="from-orange-500/20 to-red-500/10"
+              href="/inventory"
+            />
+            <ActionCard 
+              icon={<Trophy className="text-yellow-400" size={32} />}
+              title="Mini Juegos"
+              desc="Gana monedas y XP"
+              gradient="from-yellow-500/20 to-orange-500/10"
+              href="/games"
+            />
+            <ActionCard 
+              icon={<Scan className="text-emerald-400" size={32} />}
+              title="Escanear"
+              desc="Añade con tu cámara"
+              gradient="from-emerald-500/20 to-teal-500/10"
+              href="/scan"
+            />
+            <ActionCard 
+              icon={<Package className="text-cyan-400" size={32} />}
+              title="Tienda"
+              desc="Nuevos sobres"
+              gradient="from-cyan-500/20 to-blue-500/10"
+              href="/packs"
+            />
+            <ActionCard 
+              icon={<Users className="text-purple-400" size={32} />}
+              title="Intercambio"
+              desc="Cambia con amigos"
+              gradient="from-purple-500/20 to-pink-500/10"
+              href="/trading"
+              fullWidth
+            />
+          </div>
+
+          {/* Sidebar / Profile Section - ORDER 2 ON MOBILE */}
+          <div className="lg:col-span-4 order-2 lg:order-1 space-y-6">
             <TrainerCard 
               uid={user?.uid}
               trainerName={trainerData?.name}
@@ -180,46 +220,6 @@ export const DashboardComponent = () => {
                 <span className="text-xl font-black text-white">{trainerData?.stardust}</span>
               </div>
             </div>
-          </div>
-
-          {/* Main Actions Section */}
-          <div className="lg:col-span-8 grid grid-cols-1 md:grid-cols-2 gap-6">
-            <ActionCard 
-              icon={<LayoutGrid className="text-orange-400" size={32} />}
-              title="Colección"
-              desc="Gestiona tus cartas y sube de nivel"
-              gradient="from-orange-500/20 to-red-500/10"
-              href="/inventory"
-            />
-            <ActionCard 
-              icon={<Trophy className="text-yellow-400" size={32} />}
-              title="Mini Juegos"
-              desc="Gana monedas en desafíos rápidos"
-              gradient="from-yellow-500/20 to-orange-500/10"
-              href="/games"
-            />
-            <ActionCard 
-              icon={<Scan className="text-emerald-400" size={32} />}
-              title="Escanear"
-              desc="Añade cartas usando tu cámara"
-              gradient="from-emerald-500/20 to-teal-500/10"
-              href="/scan"
-            />
-            <ActionCard 
-              icon={<Package className="text-cyan-400" size={32} />}
-              title="Tienda"
-              desc="Abre nuevos paquetes"
-              gradient="from-cyan-500/20 to-blue-500/10"
-              href="/packs"
-            />
-            <ActionCard 
-              icon={<Users className="text-purple-400" size={32} />}
-              title="Intercambio"
-              desc="Intercambia cartas con amigos"
-              gradient="from-purple-500/20 to-pink-500/10"
-              href="/trading"
-              fullWidth
-            />
           </div>
         </motion.div>
       </AnimatePresence>
