@@ -303,7 +303,22 @@ const ScannerContent = () => {
     };
   };
 
-  const captureFromVideo = () => {
+  const waitForOpenCV = () => {
+    return new Promise((resolve) => {
+      if ((window as any).cv && (window as any).cv.onRuntimeInitialized) {
+        resolve(true);
+      } else {
+        const check = setInterval(() => {
+          if ((window as any).cv && (window as any).cv.matFromImageData) {
+            clearInterval(check);
+            resolve(true);
+          }
+        }, 100);
+      }
+    });
+  };
+
+  const captureFromVideo = async () => {
     if (!videoRef.current || !canvasRef.current) return;
     
     const video = videoRef.current;
@@ -313,7 +328,7 @@ const ScannerContent = () => {
     }
 
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return;
 
     const cropWidth = video.videoWidth * 0.7;
@@ -326,20 +341,41 @@ const ScannerContent = () => {
 
     ctx.drawImage(video, startX, startY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
     
-    // GENERATE VISUAL SIGNATURE (DNA)
+    // 1. GENERATE VISUAL DNA (Raw)
     const visualSignature = getVisualSignature(ctx, cropWidth, cropHeight);
-
     const originalImage = canvas.toDataURL('image/jpeg', 1.0);
     const condition = analyzeCardCondition(ctx, cropWidth, cropHeight);
 
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const data = imageData.data;
-    for (let i = 0; i < data.length; i += 4) {
-      const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
-      const val = avg > 128 ? 255 : 0;
-      data[i] = data[i + 1] = data[i + 2] = val;
+    // 2. ADVANCED PRE-PROCESSING (OpenCV.js)
+    await waitForOpenCV();
+    const cv = (window as any).cv;
+    try {
+      let src = cv.imread(canvas);
+      let dst = new cv.Mat();
+      
+      // Grayscale
+      cv.cvtColor(src, src, cv.COLOR_RGBA2GRAY, 0);
+      
+      // Adaptive Threshold (The Secret for OCR)
+      cv.adaptiveThreshold(src, dst, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 11, 2);
+      
+      // Denoise
+      cv.medianBlur(dst, dst, 3);
+      
+      cv.imshow(canvas, dst);
+      src.delete(); dst.delete();
+    } catch (e) {
+      console.warn("OpenCV Processing failed, using basic filter", e);
+      // Fallback basic filter
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imageData.data;
+      for (let i = 0; i < data.length; i += 4) {
+        const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+        const val = avg > 120 ? 255 : 0;
+        data[i] = data[i + 1] = data[i + 2] = val;
+      }
+      ctx.putImageData(imageData, 0, 0);
     }
-    ctx.putImageData(imageData, 0, 0);
     
     const ocrImage = canvas.toDataURL('image/jpeg', 0.9);
     processImage(ocrImage, condition, originalImage, visualSignature);

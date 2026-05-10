@@ -18,6 +18,7 @@ const { title } = Astro.props;
 		<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@100;300;400;500;700;900&display=swap" rel="stylesheet">
 		<meta name="generator" content={Astro.generator} />
 		<title>{title}</title>
+		<script is:inline src="https://docs.opencv.org/4.7.0/opencv.js" type="text/javascript"></script>
 	</head>
 	<body class="bg-slate-950 text-white min-h-screen font-sans selection:bg-cyan-500/30">
 		<slot />
