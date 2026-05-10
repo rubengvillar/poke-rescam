@@ -67,11 +67,19 @@ const ScannerContent = () => {
         return;
       }
 
+      const typesList = [
+        'Fire', 'Water', 'Grass', 'Lightning', 'Psychic', 'Fighting', 'Darkness', 'Metal', 'Fairy', 'Dragon', 'Colorless',
+        'Fuego', 'Agua', 'Planta', 'Rayo', 'Psíquico', 'Lucha', 'Oscuridad', 'Acero', 'Hada', 'Dragón', 'Incoloro'
+      ];
+      
+      const foundType = typesList.find(t => normalizedText.includes(t.toUpperCase())) || "Unknown";
+      const weaknessMatch = normalizedText.match(/(WEAKNESS|DEBILIDAD)\s*([A-Z]+)\s*([X×]\d+)/i);
+
       const foundCard = {
         id: 'scanned-' + Date.now(),
         name: normalizedText.split('\n')[0] || "Carta Escaneada",
         hp: normalizedText.match(/(\d+)\s*(HP|PS)/)?.[1] || "???",
-        type: keywords.find(k => normalizedText.includes(k)) || "N/A",
+        type: foundType,
         text: text.substring(0, 300),
         images: { small: imageSrc },
         rarity: "Custom",
@@ -79,6 +87,8 @@ const ScannerContent = () => {
         attributes: {
           hp: normalizedText.match(/(\d+)\s*(HP|PS)/)?.[1] || "???",
           stage: normalizedText.match(/(STAGE|FASE)\s*(\d+)/i)?.[2] || "Basic",
+          type: foundType,
+          weakness: weaknessMatch ? `${weaknessMatch[2]} ${weaknessMatch[3]}` : "None",
           attacks: text.split('\n').filter(l => l.length > 20).slice(0, 2)
         }
       };
@@ -139,6 +149,21 @@ const ScannerContent = () => {
   useEffect(() => {
     return () => stopCamera();
   }, []);
+
+  const getTypeConfig = (type: string) => {
+    const t = type.toLowerCase();
+    if (t.includes('fire') || t.includes('fuego')) return { icon: '🔥', color: 'text-orange-500', bg: 'bg-orange-500/10' };
+    if (t.includes('water') || t.includes('agua')) return { icon: '💧', color: 'text-blue-500', bg: 'bg-blue-500/10' };
+    if (t.includes('grass') || t.includes('planta')) return { icon: '🌿', color: 'text-emerald-500', bg: 'bg-emerald-500/10' };
+    if (t.includes('lightning') || t.includes('rayo')) return { icon: '⚡', color: 'text-yellow-400', bg: 'bg-yellow-400/10' };
+    if (t.includes('psychic') || t.includes('psíquico')) return { icon: '🔮', color: 'text-purple-500', bg: 'bg-purple-500/10' };
+    if (t.includes('fighting') || t.includes('lucha')) return { icon: '👊', color: 'text-red-700', bg: 'bg-red-700/10' };
+    if (t.includes('darkness') || t.includes('oscuridad')) return { icon: '🌙', color: 'text-slate-400', bg: 'bg-slate-400/10' };
+    if (t.includes('metal') || t.includes('acero')) return { icon: '⚙️', color: 'text-slate-300', bg: 'bg-slate-300/10' };
+    if (t.includes('fairy') || t.includes('hada')) return { icon: '✨', color: 'text-pink-400', bg: 'bg-pink-400/10' };
+    if (t.includes('dragon') || t.includes('dragón')) return { icon: '🐲', color: 'text-indigo-500', bg: 'bg-indigo-500/10' };
+    return { icon: '⚪', color: 'text-slate-500', bg: 'bg-slate-500/10' };
+  };
 
   console.log("ScannerContent rendering. Stream:", !!stream, "Result:", !!result);
 
@@ -232,22 +257,40 @@ const ScannerContent = () => {
         )}
 
         {result && (
-          <div className="bg-slate-900/50 border border-white/5 p-10 rounded-[3rem] max-w-md w-full text-center backdrop-blur-2xl shadow-2xl">
-            <div className="w-20 h-20 bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto mb-8 border border-emerald-500/20">
-              <CheckCircle2 className="text-emerald-400" size={40} />
+          <div className="bg-slate-900/50 border border-white/5 p-8 rounded-[3rem] max-w-md w-full text-center backdrop-blur-2xl shadow-2xl">
+            <div className="w-16 h-16 bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto mb-6 border border-emerald-500/20">
+              <CheckCircle2 className="text-emerald-400" size={32} />
             </div>
-            <h2 className="text-3xl font-black text-white italic uppercase mb-3 tracking-tighter">¡Carta Añadida!</h2>
-            <p className="text-slate-500 mb-10 text-sm font-medium">Hemos analizado tu carta y ya está disponible en tu colección.</p>
+            
+            <div className="mb-6">
+              <h2 className="text-2xl font-black text-white italic uppercase tracking-tighter mb-4">{result.name}</h2>
+              
+              <div className="flex justify-center gap-3 mb-6">
+                <div className={`px-4 py-2 rounded-xl flex items-center gap-2 border border-white/5 ${getTypeConfig(result.type).bg}`}>
+                  <span className="text-lg">{getTypeConfig(result.type).icon}</span>
+                  <span className={`text-[10px] font-black uppercase tracking-widest ${getTypeConfig(result.type).color}`}>{result.type}</span>
+                </div>
+                <div className="px-4 py-2 rounded-xl flex items-center gap-2 bg-red-500/10 border border-white/5">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-red-400">HP {result.hp}</span>
+                </div>
+              </div>
+
+              {result.attributes.weakness !== "None" && (
+                <div className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-6">
+                  Debilidad: <span className="text-slate-300">{result.attributes.weakness}</span>
+                </div>
+              )}
+            </div>
             
             <button 
               onClick={() => { setResult(null); startCamera(); }}
-              className="w-full bg-white text-black py-5 rounded-2xl font-black uppercase tracking-widest hover:bg-cyan-400 transition-all active:scale-95"
+              className="w-full bg-white text-black py-5 rounded-2xl font-black uppercase tracking-widest hover:bg-cyan-400 transition-all active:scale-95 shadow-xl mb-4"
             >
               Escanear Otra
             </button>
             <a 
               href="/inventory"
-              className="block mt-6 text-slate-500 font-black text-[10px] uppercase tracking-[0.3em] hover:text-white transition-colors"
+              className="block text-slate-500 font-black text-[10px] uppercase tracking-[0.3em] hover:text-white transition-colors"
             >
               Ir a mi Inventario
             </a>
