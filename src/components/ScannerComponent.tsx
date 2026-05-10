@@ -47,14 +47,21 @@ const ScannerContent = () => {
     setIsScanning(true);
     try {
       const { data: { text } } = await Tesseract.recognize(imageSrc, 'eng');
+      console.log("OCR Result:", text);
       
-      // Verification logic: Search for common TCG keywords
-      const keywords = ['HP', 'POKEMON', 'STAGE', 'ABILITY', 'ATTACK', 'WEAKNESS', 'RESISTANCE', 'RETREAT'];
+      // Expanded keywords for better detection
+      const keywords = [
+        'HP', 'STAGE', 'ABILITY', 'ATTACK', 'WEAKNESS', 'RESISTANCE', 'RETREAT',
+        'EVOLVES', 'POKÉMON', 'TRAINER', 'ENERGY', 'BASIC', 'LEVEL', 'ITEM', 'SUPPORTER'
+      ];
+      
       const normalizedText = text.toUpperCase();
-      const isPokemonCard = keywords.some(k => normalizedText.includes(k));
+      // Look for at least one match or any number/number pattern (e.g. 120/150)
+      const hasKeyword = keywords.some(k => normalizedText.includes(k));
+      const hasNumberPattern = /\d+\/\d+/.test(normalizedText);
 
-      if (!isPokemonCard) {
-        showToast("No parece ser una carta de Pokémon válida", "error");
+      if (!hasKeyword && !hasNumberPattern) {
+        showToast("No se detectó una carta válida. Intenta con más luz.", "error");
         return;
       }
 
