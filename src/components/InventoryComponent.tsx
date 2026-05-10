@@ -1,28 +1,57 @@
 import React, { useEffect, useState } from 'react';
 import { auth, db } from '../lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
-import { collection, query, getDocs, doc, deleteDoc, updateDoc, increment } from 'firebase/firestore';
+import { collection, query, getDocs, doc, deleteDoc, updateDoc, increment, onSnapshot } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CardHologram } from './CardHologram';
 import { Trash2, Sparkles, Filter, ChevronLeft } from 'lucide-react';
+import { ToastProvider, useToast } from './Toast';
 
 export const InventoryComponent = () => {
+  return (
+    <ToastProvider>
+      <InventoryContent />
+    </ToastProvider>
+  );
+};
+
+const InventoryContent = () => {
+  const { showToast } = useToast();
   const [cards, setCards] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (u) => {
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
       if (u) {
         setUserId(u.uid);
         const q = query(collection(db, `users/${u.uid}/inventory`));
-        const querySnapshot = await getDocs(q);
-        const cardList = querySnapshot.docs
-          .map(doc => ({ id: doc.id, ...doc.data() }))
-          .filter((card: any) => card && card.name); // Ensure card exists and has at least a name
-        setCards(cardList);
+        const unsubInv = onSnapshot(q, (snap) => {
+          const rawCards = snap.docs
+            .map(doc => ({ ...doc.data(), firestoreId: doc.id }))
+            .filter((card: any) => card && (card.name || card.id));
+          
+          // Group by name + id (to be unique per card type)
+          const groups: Record<string, any> = {};
+          rawCards.forEach(card => {
+            const groupKey = card.id || card.name;
+            if (!groups[groupKey]) {
+              groups[groupKey] = { ...card, count: 1, firestoreIds: [card.firestoreId] };
+            } else {
+              groups[groupKey].count++;
+              groups[groupKey].firestoreIds.push(card.firestoreId);
+            }
+          });
+
+          const cardGroups = Object.values(groups);
+          console.log("INVENTORY GROUPS:", cardGroups.length);
+          setCards(cardGroups);
+          setLoading(false);
+        });
+        return unsubInv;
+      } else {
+        setLoading(false);
       }
-      setLoading(false);
     });
     return () => unsubscribe();
   }, []);
@@ -30,19 +59,19 @@ export const InventoryComponent = () => {
   const burnCard = async (cardId: string) => {
     if (!userId) return;
     
-    // In a real app, you'd confirm first
     try {
       const cardRef = doc(db, `users/${userId}/inventory`, cardId);
       const userRef = doc(db, 'users', userId);
       
       await deleteDoc(cardRef);
       await updateDoc(userRef, {
-        stardust: increment(50) // Each card gives 50 stardust
+        stardust: increment(50)
       });
       
-      setCards(cards.filter(c => c.id !== cardId));
+      showToast("¡Carta quemada! +50 Polvo Estelar", "success");
     } catch (err) {
       console.error("Error burning card:", err);
+      showToast("No se pudo quemar la carta", "error");
     }
   };
 
@@ -78,7 +107,7 @@ export const InventoryComponent = () => {
             <AnimatePresence>
               {cards.map((card) => (
                 <motion.div
-                  key={card.id}
+                  key={card.id || card.name}
                   layout
                   initial={{ opacity: 0, scale: 0.9 }}
                   animate={{ opacity: 1, scale: 1 }}
@@ -90,17 +119,23 @@ export const InventoryComponent = () => {
                     rotate: 15,
                     transition: { duration: 0.8, ease: "easeIn" }
                   }}
-                  className="flex flex-col items-center gap-4 group"
+                  className="flex flex-col items-center gap-4 group relative"
                 >
                   <CardHologram card={card} />
                   
+                  {card.count > 1 && (
+                    <div className="absolute top-4 right-4 z-20 bg-cyan-500 text-black px-3 py-1 rounded-full font-black text-xs shadow-xl border-2 border-white/20">
+                      x{card.count}
+                    </div>
+                  )}
+
                   <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button 
-                      onClick={() => burnCard(card.id)}
+                      onClick={() => burnCard(card.firestoreIds[0])}
                       className="flex items-center gap-2 bg-red-500/10 text-red-400 border border-red-500/20 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all"
                     >
                       <Trash2 size={14} />
-                      Quemar
+                      Quemar Uno
                     </button>
                   </div>
                 </motion.div>

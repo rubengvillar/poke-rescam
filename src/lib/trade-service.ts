@@ -1,18 +1,18 @@
 import { db } from './firebase';
-import { doc, setDoc, updateDoc, onSnapshot, serverTimestamp, collection, addDoc } from 'firebase/firestore';
+import { doc, setDoc, updateDoc, onSnapshot, serverTimestamp, collection, addDoc, getDoc, writeBatch, deleteDoc } from 'firebase/firestore';
 
 export interface TradeSession {
-  id?: string;
+  id: string;
   proposerId: string;
   receiverId: string;
-  proposerCards: string[]; // Card IDs
-  receiverCards: string[]; // Card IDs
+  proposerCards: string[];
+  receiverCards: string[];
   status: 'pending' | 'active' | 'accepted_proposer' | 'accepted_receiver' | 'completed' | 'cancelled';
   updatedAt: any;
 }
 
 export const createTradeSession = async (proposerId: string, receiverId: string) => {
-  const tradeData: TradeSession = {
+  const tradeData: any = {
     proposerId,
     receiverId,
     proposerCards: [],
@@ -45,12 +45,37 @@ export const acceptTrade = async (tradeId: string, isProposer: boolean) => {
   });
 };
 
-// This function would be called when BOTH have accepted (logic in the component snapshot listener)
-export const finalizeTrade = async (tradeId: string) => {
-  const tradeRef = doc(db, 'trades', tradeId);
-  await updateDoc(tradeRef, {
+export const finalizeTrade = async (trade: TradeSession) => {
+  const batch = writeBatch(db);
+  const tradeRef = doc(db, 'trades', trade.id);
+
+  // 1. Move Proposer Cards to Receiver
+  for (const cid of trade.proposerCards) {
+    const cardRef = doc(db, `users/${trade.proposerId}/inventory`, cid);
+    const cardSnap = await getDoc(cardRef);
+    if (cardSnap.exists()) {
+      const newCardRef = doc(collection(db, `users/${trade.receiverId}/inventory`));
+      batch.set(newCardRef, { ...cardSnap.data(), transferredFrom: trade.proposerId, updatedAt: serverTimestamp() });
+      batch.delete(cardRef);
+    }
+  }
+
+  // 2. Move Receiver Cards to Proposer
+  for (const cid of trade.receiverCards) {
+    const cardRef = doc(db, `users/${trade.receiverId}/inventory`, cid);
+    const cardSnap = await getDoc(cardRef);
+    if (cardSnap.exists()) {
+      const newCardRef = doc(collection(db, `users/${trade.proposerId}/inventory`));
+      batch.set(newCardRef, { ...cardSnap.data(), transferredFrom: trade.receiverId, updatedAt: serverTimestamp() });
+      batch.delete(cardRef);
+    }
+  }
+
+  // 3. Complete Trade
+  batch.update(tradeRef, {
     status: 'completed',
     updatedAt: serverTimestamp()
   });
-  // Note: Actual inventory transfer should happen via Cloud Functions for security
+
+  await batch.commit();
 };

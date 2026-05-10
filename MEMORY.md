@@ -48,20 +48,26 @@ Este archivo registra el contexto, los avances y el estado actual de `poke_resca
     - Se implementó la lógica de **Solicitudes de Amistad** (enviar, recibir, aceptar, rechazar).
     - Se añadió una sección de **ID Manual** para añadir amigos sin necesidad de cámara.
     - Se visualiza la lista de amigos conectados y solicitudes pendientes en tiempo real.
-- **Hito**: Overhaul táctico de Stadium Battle.
-    - Se implementó un sistema de energía (Mana) para ataques.
-    - Se añadió una tabla de tipos completa y multiplicadores de daño (x1.5 / x0.5).
-    - Se incluyeron estados alterados (Quemado, Veneno, Parálisis) con efectos visuales.
-    - **Dificultad Dinámica**: Los rivales ahora escalan según el XP del jugador.
-    - **Encuentros Aleatorios**: Se añadieron rivales de rareza "Élite" y "Legendario" (5% de probabilidad) con aviso visual y recompensas triplicadas.
-    - **IA Inteligente**: El bot ahora gestiona su energía y se defiende estratégicamente.
-    - **Presión en Tiempo Real**: Se añadió un temporizador de turno de 10 segundos para el jugador. Si el tiempo se agota, el rival ataca automáticamente.
-    - Mejora de UI: Barras de energía, iconos de estado, alerta de rival legendario y contador de turno.
+- **Hito**: Estabilización y Mejora del Escáner (Overhaul).
+    - Se implementó un sistema de **Doble Vía**: Cámara en vivo + Subida de archivos (Fallback) para máxima compatibilidad móvil.
+    - Se añadió **Validación OCR**: El sistema ahora verifica que la imagen sea una carta de Pokémon buscando palabras clave (HP, PS, Stage, etc.) en español e inglés.
+    - Se implementó **Extracción Estructurada de Datos**: Ahora se parsea automáticamente el HP/PS, Nombre, Tipo, Debilidad y Fase, guardándolos en campos específicos de Firestore.
+    - Se añadió **Mapeo Visual de Tipos**: Iconos emoji y colores temáticos según el elemento detectado (Fuego, Agua, etc.).
+    - Mejora de UX: Botón de retorno al Dashboard y logs de depuración integrados.
+- **Hito**: Optimización del Dashboard.
+    - Se reordenó el grid para dispositivos móviles: Acciones primero, Perfil después.
+    - Se compactaron las tarjetas de acción para reducir el scroll.
+    - Se corrigieron errores de navegación y se aseguró la persistencia del estado en el menú lateral.
 
 ## Próximos Pasos (Pendientes)
 1.  **Refinar Escáner**: Mejorar la precisión del OCR o integrar una API de reconocimiento visual más robusta.
 2.  **Finalizar Juegos**: Asegurar que todos los mini-juegos en `src/pages/games/` sean funcionales y estén conectados al inventario real.
-3.  **Sistema de Trading**: Completar la interfaz de usuario para el servicio de intercambios.
+- **Hito**: Sistema de Intercambio (Trade Room) en tiempo real.
+    - Se implementó la **Sala de Intercambio** con vista dividida (Split-View).
+    - Se integró un **Selector de Cartas** dinámico desde el inventario.
+    - Se estableció el sistema de **Doble Confirmación** (Double-Check) para evitar estafas.
+    - Sincronización instantánea mediante Firestore `onSnapshot`.
+    - Animaciones de éxito y transición fluida entre estados.
 4.  **Optimización**: Revisar el rendimiento de la carga de imágenes de cartas.
 
 ---
