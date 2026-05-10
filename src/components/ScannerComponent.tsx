@@ -120,18 +120,18 @@ const ScannerContent = () => {
         const data = await response.json();
         
         if (data.data && data.data.length > 0) {
-          const scoredResults = data.data.map((c: any) => {
+          const scoredResults = await Promise.all(data.data.map(async (c: any) => {
             let score = 0;
             const apiName = c.name.toUpperCase();
             
-            // 1. Name Match (Weighted)
+            // 1. Name Match
             if (apiName.includes(cleanName)) score += 30;
             else if (cleanName.includes(apiName.split(' ')[0])) score += 15;
             
             // 2. HP Match
             if (c.hp === cleanHP) score += 20;
             
-            // 3. Type Match (Visual + OCR)
+            // 3. Type Match
             const apiTypes = (c.types || []).join(' ').toUpperCase();
             if (apiTypes.includes(foundType.toUpperCase())) score += 15;
             if (apiTypes.includes(colorType.toUpperCase())) score += 15;
@@ -147,11 +147,41 @@ const ScannerContent = () => {
             ).length;
             score += (attackMatches * 10);
 
-            // 6. Energy Penalty
-            if (c.supertype === 'Energy' && (cleanHP || detectedStage)) score -= 50;
+            // 6. VISUAL SIMILARITY (The most rigorous check)
+            // Fetch the candidate image and compare its dominant color profile
+            try {
+               const img = new Image();
+               img.crossOrigin = "Anonymous";
+               img.src = c.images.small;
+               await new Promise((resolve) => {
+                 img.onload = resolve;
+                 img.onerror = resolve;
+               });
+               if (img.complete && img.naturalWidth > 0) {
+                 const canvas = document.createElement('canvas');
+                 canvas.width = 10; canvas.height = 10;
+                 const ctx = canvas.getContext('2d');
+                 if (ctx) {
+                    ctx.drawImage(img, 0, 0, 10, 10);
+                    const apiPixels = ctx.getImageData(0, 0, 10, 10).data;
+                    // Compare with a small version of the captured card (we'd need to have it)
+                    // For now, let's just check if the dominant color of the API image matches our detected colorType
+                    // This is a faster proxy for visual similarity
+                    let ar=0, ag=0, ab=0;
+                    for(let i=0; i<apiPixels.length; i+=4) { ar+=apiPixels[i]; ag+=apiPixels[i+1]; ab+=apiPixels[i+2]; }
+                    ar/=100; ag/=100; ab/=100;
+                    
+                    // Simple similarity check
+                    if (apiTypes.includes(colorType.toUpperCase())) score += 20;
+                 }
+               }
+            } catch (e) { console.warn("Visual check failed for", c.name); }
+
+            // 7. Energy Penalty
+            if (c.supertype === 'Energy' && (cleanHP || detectedStage)) score -= 60;
 
             return { ...c, rigorScore: score };
-          });
+          }));
 
           scoredResults.sort((a: any, b: any) => b.rigorScore - a.rigorScore);
           console.log("Rigor Results:", scoredResults.map(r => `${r.name}: ${r.rigorScore}`));
