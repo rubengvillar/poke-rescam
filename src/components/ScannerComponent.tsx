@@ -17,6 +17,7 @@ export const ScannerComponent = () => {
 const ScannerContent = () => {
   const { showToast } = useToast();
   const [stream, setStream] = useState<MediaStream | null>(null);
+  const [isStarting, setIsStarting] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [batchScans, setBatchScans] = useState<any[]>([]);
@@ -28,36 +29,42 @@ const ScannerContent = () => {
 
   const startCamera = async () => {
     setError(null);
+    setIsStarting(true);
+    const timeout = setTimeout(() => {
+      if (isStarting) {
+        setIsStarting(false);
+        showToast("La cámara tardó demasiado en responder. Revisa los permisos.", "error");
+      }
+    }, 10000);
+
     try {
       if (stream) stopCamera();
+      console.log("Scanner: Requesting permissions...");
+      
       const constraints: MediaStreamConstraints = {
         video: { 
           facingMode: { ideal: 'environment' },
-          width: { min: 1280, ideal: 1920, max: 2560 },
-          height: { min: 720, ideal: 1080, max: 1440 },
-          frameRate: { ideal: 30 }
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
         }
       };
       
-      const s = await navigator.mediaDevices.getUserMedia(constraints);
-      const track = s.getVideoTracks()[0];
-      
-      // Try to apply advanced focus constraints if supported
-      const capabilities = track.getCapabilities() as any;
-      if (capabilities.focusMode?.includes('continuous')) {
-        try {
-          await (track as any).applyConstraints({
-            advanced: [{ focusMode: 'continuous' }]
-          });
-        } catch (e) {
-          console.warn("Advanced focus not supported", e);
-        }
+      let s;
+      try {
+        s = await navigator.mediaDevices.getUserMedia(constraints);
+      } catch (e) {
+        console.warn("Scanner: 720p failed, falling back...");
+        s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
       }
-
+      
+      console.log("Scanner: Stream established:", s.id);
       setStream(s);
     } catch (err: any) {
-      console.error("Camera Error:", err);
-      showToast("No se pudo iniciar cámara. Usa la opción de subir foto.", "warning");
+      console.error("Scanner: Camera Error:", err);
+      showToast("Error de cámara: " + (err.message || "desconocido"), "error");
+    } finally {
+      clearTimeout(timeout);
+      setIsStarting(false);
     }
   };
 
@@ -162,7 +169,7 @@ const ScannerContent = () => {
       const finalImage = originalImage || imageSrc;
 
       const foundCard = {
-        id: apiCard?.id || `card-${cleanName}-${cleanHP}-${cleanNum.replace('/', '')}`,
+        id: apiCard?.id || `card-${cleanName}-${cleanHP}-${cleanNumOnly}`,
         name: apiCard?.name || normalizedText.split('\n')[0] || "Carta Escaneada",
         hp: apiCard?.hp || cleanHP || "???",
         type: apiCard?.types?.[0] || foundType,
@@ -403,9 +410,17 @@ const ScannerContent = () => {
             <div className="flex flex-col gap-4">
               <button 
                 onClick={startCamera}
-                className="bg-white text-black px-12 py-5 rounded-2xl font-black uppercase tracking-widest hover:bg-cyan-400 transition-all shadow-xl active:scale-95"
+                disabled={isStarting}
+                className={`bg-white text-black px-12 py-5 rounded-2xl font-black uppercase tracking-widest transition-all shadow-xl active:scale-95 flex items-center justify-center gap-3 ${isStarting ? 'opacity-50 cursor-not-allowed' : 'hover:bg-cyan-400'}`}
               >
-                Abrir Cámara
+                {isStarting ? (
+                  <>
+                    <RefreshCw size={20} className="animate-spin" />
+                    Iniciando...
+                  </>
+                ) : (
+                  'Abrir Cámara'
+                )}
               </button>
               <button 
                 onClick={() => fileInputRef.current?.click()}

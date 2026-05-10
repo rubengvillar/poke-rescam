@@ -12,6 +12,11 @@ const firebaseConfig = {
   appId: import.meta.env.PUBLIC_FIREBASE_APP_ID
 };
 
+// Safety check for production
+if (import.meta.env.PROD && !firebaseConfig.apiKey) {
+  console.warn("CRITICAL: Firebase API Key is missing in production!");
+}
+
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
