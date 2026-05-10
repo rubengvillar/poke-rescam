@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Brain, RefreshCw, Trophy, ChevronLeft, Sparkles, Star, Heart, Timer, Ghost, XCircle } from 'lucide-react';
 import { auth, db } from '../lib/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
 import { collection, query, getDocs, limit, doc, updateDoc, increment, where } from 'firebase/firestore';
 
 export const EvolutionMemory = () => {
@@ -29,8 +30,14 @@ export const EvolutionMemory = () => {
     try {
       // Fetch a larger sample to find evolutions locally
       const randomVal = Math.random();
-      const q = query(cardsRef, where('randomSeed', '>=', randomVal), limit(40));
-      const snap = await getDocs(q);
+      let q = query(cardsRef, where('randomSeed', '>=', randomVal), limit(40));
+      let snap = await getDocs(q);
+      
+      if (snap.empty) {
+        q = query(cardsRef, limit(40));
+        snap = await getDocs(q);
+      }
+      
       const pool = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
       const pairs: any[] = [];

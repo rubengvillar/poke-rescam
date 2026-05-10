@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Target, Timer, Trophy, ChevronLeft, Zap, Flame, Droplets, Leaf, Skull, Mountain, Ghost, Box, HelpCircle, Heart, XCircle, Sparkles } from 'lucide-react';
 import { auth, db } from '../lib/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
 import { doc, updateDoc, increment, collection, getDocs, limit, query, where } from 'firebase/firestore';
 
 const TYPES = [
@@ -38,9 +39,13 @@ export const TypeQuiz = () => {
 
     const cardsRef = collection(db, 'cards');
     const randomVal = Math.random();
-    // Fetch more questions so they can fail and still reach 10 correct
-    const q = query(cardsRef, where('randomSeed', '>=', randomVal), limit(50));
-    const snap = await getDocs(q);
+    let q = query(cardsRef, where('randomSeed', '>=', randomVal), limit(50));
+    let snap = await getDocs(q);
+    
+    if (snap.empty) {
+      q = query(cardsRef, limit(50));
+      snap = await getDocs(q);
+    }
     
     const fetched = snap.docs.map(d => ({ 
       id: d.id, 

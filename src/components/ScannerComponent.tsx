@@ -31,7 +31,12 @@ const ScannerContent = () => {
     try {
       if (stream) stopCamera();
       const s = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: { ideal: 'environment' } } 
+        video: { 
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+          frameRate: { ideal: 30 }
+        } 
       });
       setStream(s);
     } catch (err: any) {
@@ -45,7 +50,7 @@ const ScannerContent = () => {
     setStream(null);
   };
 
-  const processImage = async (imageSrc: string, condition: number = 10) => {
+  const processImage = async (imageSrc: string, condition: number = 10, originalImage?: string) => {
     setIsScanning(true);
     try {
       const { data: { text } } = await Tesseract.recognize(
@@ -102,6 +107,8 @@ const ScannerContent = () => {
         console.error("API Fallback Error:", err);
       }
 
+      const finalImage = originalImage || imageSrc;
+
       const foundCard = {
         id: apiCard?.id || `card-${cleanName}-${cleanHP}-${cleanNum.replace('/', '')}`,
         name: apiCard?.name || normalizedText.split('\n')[0] || "Carta Escaneada",
@@ -109,8 +116,8 @@ const ScannerContent = () => {
         type: apiCard?.types?.[0] || foundType,
         text: text.substring(0, 300),
         images: { 
-          small: apiCard?.images?.small || imageSrc,
-          large: apiCard?.images?.large || imageSrc
+          small: apiCard?.images?.small || finalImage,
+          large: apiCard?.images?.large || finalImage
         },
         rarity: apiCard?.rarity || "Custom",
         isCustom: !apiCard,
@@ -198,10 +205,13 @@ const ScannerContent = () => {
     // 1. Draw the cropped image
     ctx.drawImage(video, startX, startY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
     
+    // SAVE ORIGINAL for display (High Quality)
+    const originalImage = canvas.toDataURL('image/jpeg', 1.0);
+
     // Analyze condition before destroying image with filters
     const condition = analyzeCardCondition(ctx, cropWidth, cropHeight);
 
-    // 2. Pre-processing: Grayscale and Contrast
+    // 2. Pre-processing: Grayscale and Contrast (Only for OCR)
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const data = imageData.data;
     for (let i = 0; i < data.length; i += 4) {
@@ -212,8 +222,9 @@ const ScannerContent = () => {
     }
     ctx.putImageData(imageData, 0, 0);
     
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
-    processImage(dataUrl, condition);
+    // Filtered image for OCR
+    const ocrImage = canvas.toDataURL('image/jpeg', 0.9);
+    processImage(ocrImage, condition, originalImage);
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
