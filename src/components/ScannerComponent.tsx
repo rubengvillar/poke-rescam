@@ -73,7 +73,7 @@ const ScannerContent = () => {
     setStream(null);
   };
 
-  const processImage = async (imageSrc: string, condition: number = 10, originalImage?: string, colorType: string = 'Unknown') => {
+  const processImage = async (imageSrc: string, condition: number = 10, originalImage?: string, visualSignature: any = null) => {
     setIsScanning(true);
     try {
       const { data: { text } } = await Tesseract.recognize(
@@ -96,7 +96,6 @@ const ScannerContent = () => {
       }
 
       const foundType = typesList.find(t => normalizedText.includes(t.toUpperCase())) || "Unknown";
-      const normalize = (str: string) => str.toUpperCase().replace(/[^A-Z0-9]/g, '').trim();
       const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 2);
       
       const cleanHP = normalizedText.match(/(\d+)\s*(HP|PS)/)?.[1] || "";
@@ -104,17 +103,13 @@ const ScannerContent = () => {
       const cleanNumOnly = cleanNumMatch ? cleanNumMatch[1] : (normalizedText.match(/(\d{2,3})/)?.[1] || "");
       const cleanName = normalizedText.split('\n')[0].replace(/[^A-Z]/g, '').trim();
       
-      // EXTRA: Extract Stage
       const stageMatch = normalizedText.match(/(BASIC|STAGE 1|STAGE 2|FASE 1|FASE 2|LEVEL UP|RESTORED|VMAX|VSTAR|MEGA|GX|EX)/);
       const detectedStage = stageMatch ? stageMatch[0] : "";
-
-      // EXTRA: Extract Attacks (Lines with symbols or numbers usually)
       const potentialAttacks = lines.filter(l => l.length > 5 && /\d+/.test(l));
 
       let apiCard = null;
       
       try {
-        // Fetch ALL potential candidates by number (most reliable anchor)
         console.log(`Rigor Search: #${cleanNumOnly}`);
         const response = await fetch(`https://api.pokemontcg.io/v2/cards?q=number:"${cleanNumOnly}"`);
         const data = await response.json();
@@ -124,72 +119,69 @@ const ScannerContent = () => {
             let score = 0;
             const apiName = c.name.toUpperCase();
             
-            // 1. Name Match
             if (apiName.includes(cleanName)) score += 30;
             else if (cleanName.includes(apiName.split(' ')[0])) score += 15;
-            
-            // 2. HP Match
             if (c.hp === cleanHP) score += 20;
             
-            // 3. Type Match
             const apiTypes = (c.types || []).join(' ').toUpperCase();
             if (apiTypes.includes(foundType.toUpperCase())) score += 15;
-            if (apiTypes.includes(colorType.toUpperCase())) score += 15;
             
-            // 4. Stage Match
             const apiStage = (c.subtypes || []).join(' ').toUpperCase();
             if (detectedStage && apiStage.includes(detectedStage)) score += 10;
             
-            // 5. Attack Validation
             const apiAttacks = (c.attacks || []).map((a: any) => a.name.toUpperCase());
             const attackMatches = apiAttacks.filter((aName: string) => 
               potentialAttacks.some(pa => pa.includes(aName))
             ).length;
             score += (attackMatches * 10);
 
-            // 6. VISUAL SIMILARITY (The most rigorous check)
-            // Fetch the candidate image and compare its dominant color profile
-            try {
-               const img = new Image();
-               img.crossOrigin = "Anonymous";
-               img.src = c.images.small;
-               await new Promise((resolve) => {
-                 img.onload = resolve;
-                 img.onerror = resolve;
-               });
-               if (img.complete && img.naturalWidth > 0) {
-                 const canvas = document.createElement('canvas');
-                 canvas.width = 10; canvas.height = 10;
-                 const ctx = canvas.getContext('2d');
-                 if (ctx) {
-                    ctx.drawImage(img, 0, 0, 10, 10);
-                    const apiPixels = ctx.getImageData(0, 0, 10, 10).data;
-                    // Compare with a small version of the captured card (we'd need to have it)
-                    // For now, let's just check if the dominant color of the API image matches our detected colorType
-                    // This is a faster proxy for visual similarity
-                    let ar=0, ag=0, ab=0;
-                    for(let i=0; i<apiPixels.length; i+=4) { ar+=apiPixels[i]; ag+=apiPixels[i+1]; ab+=apiPixels[i+2]; }
-                    ar/=100; ag/=100; ab/=100;
-                    
-                    // Simple similarity check
-                    if (apiTypes.includes(colorType.toUpperCase())) score += 20;
-                 }
-               }
-            } catch (e) { console.warn("Visual check failed for", c.name); }
+            // 6. VISUAL DNA COMPARISON (The Ultimate Rigor)
+            if (visualSignature) {
+               try {
+                  const img = new Image();
+                  img.crossOrigin = "Anonymous";
+                  img.src = c.images.small;
+                  await new Promise((resolve) => { img.onload = resolve; img.onerror = resolve; });
+                  
+                  if (img.complete && img.naturalWidth > 0) {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = 100; canvas.height = 140;
+                    const ctx = canvas.getContext('2d');
+                    if (ctx) {
+                       ctx.drawImage(img, 0, 0, 100, 140);
+                       
+                       const getZoneColor = (x: number, y: number, w: number, h: number) => {
+                         const p = ctx.getImageData(x + w/2, y + h/2, 1, 1).data;
+                         return { r: p[0], g: p[1], b: p[2] };
+                       };
 
-            // 7. Energy Penalty
+                       const apiSignature = {
+                         header: getZoneColor(0, 0, 100, 14),
+                         artwork: getZoneColor(20, 28, 60, 42),
+                         body: getZoneColor(20, 84, 60, 28)
+                       };
+
+                       const colorDist = (c1: any, c2: any) => 
+                         Math.sqrt(Math.pow(c1.r-c2.r,2) + Math.pow(c1.g-c2.g,2) + Math.pow(c1.b-c2.b,2));
+
+                       const hDist = colorDist(visualSignature.header, apiSignature.header);
+                       const aDist = colorDist(visualSignature.artwork, apiSignature.artwork);
+                       const bDist = colorDist(visualSignature.body, apiSignature.body);
+
+                       if (hDist < 50) score += 15; // Header color match
+                       if (aDist < 50) score += 20; // Artwork color match
+                       if (bDist < 50) score += 15; // Body color match
+                    }
+                  }
+               } catch (e) { console.warn("Visual DNA failed", c.name); }
+            }
+
             if (c.supertype === 'Energy' && (cleanHP || detectedStage)) score -= 60;
-
             return { ...c, rigorScore: score };
           }));
 
           scoredResults.sort((a: any, b: any) => b.rigorScore - a.rigorScore);
-          console.log("Rigor Results:", scoredResults.map(r => `${r.name}: ${r.rigorScore}`));
-          
-          // Only accept if score is high enough
-          if (scoredResults[0].rigorScore > 20) {
-            apiCard = scoredResults[0];
-          }
+          if (scoredResults[0].rigorScore > 25) apiCard = scoredResults[0];
         }
 
         // TCGdex Fallback if rigor fails on primary
@@ -298,33 +290,17 @@ const ScannerContent = () => {
     return Math.round(centeringScore + wearScore);
   };
 
-  const detectDominantColor = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
-    // Sample a few points in the card body (center-ish)
-    const samples = [
-      { x: width * 0.5, y: height * 0.2 },
-      { x: width * 0.2, y: height * 0.5 },
-      { x: width * 0.8, y: height * 0.5 },
-      { x: width * 0.5, y: height * 0.8 }
-    ];
-    
-    let r = 0, g = 0, b = 0;
-    samples.forEach(s => {
-      const p = ctx.getImageData(s.x, s.y, 1, 1).data;
-      r += p[0]; g += p[1]; b += p[2];
-    });
-    r /= samples.length; g /= samples.length; b /= samples.length;
+  const getVisualSignature = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+    const getZoneColor = (x: number, y: number, w: number, h: number) => {
+      const p = ctx.getImageData(x + w/2, y + h/2, 1, 1).data;
+      return { r: p[0], g: p[1], b: p[2] };
+    };
 
-    // Basic Color to Type Mapping
-    if (r > 200 && g > 180 && b < 150) return 'Lightning';
-    if (r > 150 && g < 100 && b < 100) return 'Fire';
-    if (r < 120 && g > 150 && b < 150) return 'Grass';
-    if (r < 150 && g > 150 && b > 200) return 'Water';
-    if (r > 120 && g < 100 && b > 150) return 'Psychic';
-    if (r > 100 && g > 80 && b < 60) return 'Fighting';
-    if (r < 80 && g < 80 && b < 80) return 'Darkness';
-    if (r > 150 && g > 150 && b > 150 && Math.abs(r-g) < 20) return 'Metal';
-    
-    return 'Colorless';
+    return {
+      header: getZoneColor(0, 0, width, height * 0.1),
+      artwork: getZoneColor(width * 0.2, height * 0.2, width * 0.6, height * 0.3),
+      body: getZoneColor(width * 0.2, height * 0.6, width * 0.6, height * 0.2)
+    };
   };
 
   const captureFromVideo = () => {
@@ -340,7 +316,6 @@ const ScannerContent = () => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Portrait card crop
     const cropWidth = video.videoWidth * 0.7;
     const cropHeight = cropWidth * 1.4;
     const startX = (video.videoWidth - cropWidth) / 2;
@@ -349,32 +324,25 @@ const ScannerContent = () => {
     canvas.width = cropWidth;
     canvas.height = cropHeight;
 
-    // 1. Draw the cropped image
     ctx.drawImage(video, startX, startY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
     
-    // DETECT COLOR TYPE
-    const colorType = detectDominantColor(ctx, cropWidth, cropHeight);
+    // GENERATE VISUAL SIGNATURE (DNA)
+    const visualSignature = getVisualSignature(ctx, cropWidth, cropHeight);
 
-    // SAVE ORIGINAL for display (High Quality)
     const originalImage = canvas.toDataURL('image/jpeg', 1.0);
-
-    // Analyze condition before destroying image with filters
     const condition = analyzeCardCondition(ctx, cropWidth, cropHeight);
 
-    // 2. Pre-processing: Grayscale and Contrast (Only for OCR)
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const data = imageData.data;
     for (let i = 0; i < data.length; i += 4) {
       const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
-      const threshold = 128;
-      const val = avg > threshold ? 255 : 0;
+      const val = avg > 128 ? 255 : 0;
       data[i] = data[i + 1] = data[i + 2] = val;
     }
     ctx.putImageData(imageData, 0, 0);
     
-    // Filtered image for OCR
     const ocrImage = canvas.toDataURL('image/jpeg', 0.9);
-    processImage(ocrImage, condition, originalImage, colorType);
+    processImage(ocrImage, condition, originalImage, visualSignature);
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
