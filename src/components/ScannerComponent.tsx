@@ -104,23 +104,45 @@ const ScannerContent = () => {
         
         if (!data.data || data.data.length === 0) {
           // Attempt 2: Just Number (Most reliable for OCR)
+          console.log("Searching by number only:", cleanNumOnly);
           response = await fetch(`https://api.pokemontcg.io/v2/cards?q=number:"${cleanNumOnly}"`);
           data = await response.json();
           if (data.data && data.data.length > 0) {
-            // Pick the one that matches name best
-            apiCard = data.data.find((c: any) => cleanName && c.name.toLowerCase().includes(cleanName.split(' ')[0].toLowerCase())) || data.data[0];
+            // SCORING HEURISTIC: Match Name > HP > First
+            const scoredResults = data.data.map((c: any) => {
+              let score = 0;
+              const firstWord = cleanName.split(' ')[0].toLowerCase();
+              if (c.name.toLowerCase().includes(firstWord)) score += 10;
+              if (c.hp === cleanHP) score += 5;
+              return { ...c, matchScore: score };
+            });
+            scoredResults.sort((a: any, b: any) => b.matchScore - a.matchScore);
+            apiCard = scoredResults[0];
           }
         } else {
-          apiCard = data.data[0];
+          // Attempt 1 Match: Also try to pick best HP if multiple names match
+          if (data.data.length > 1 && cleanHP) {
+            apiCard = data.data.find((c: any) => c.hp === cleanHP) || data.data[0];
+          } else {
+            apiCard = data.data[0];
+          }
         }
 
         if (!apiCard) {
-          // Attempt 3: TCGdex Fallback
+          // Attempt 3: TCGdex Fallback (By Number)
           const resDex = await fetch(`https://api.tcgdex.net/v2/en/cards?localId=${cleanNumOnly}`);
           const dataDex = await resDex.json();
           if (dataDex && dataDex.length > 0) {
-            const bestDex = dataDex.find((c: any) => cleanName && c.name.toLowerCase().includes(cleanName.split(' ')[0].toLowerCase())) || dataDex[0];
-            const resFull = await fetch(`https://api.tcgdex.net/v2/en/cards/${bestDex.id}`);
+             const scoredDex = dataDex.map((c: any) => {
+              let score = 0;
+              const firstWord = cleanName.split(' ')[0].toLowerCase();
+              if (c.name.toLowerCase().includes(firstWord)) score += 10;
+              // Dex doesn't always have HP in summary, but let's try
+              return { ...c, matchScore: score };
+            });
+            scoredDex.sort((a: any, b: any) => b.matchScore - a.matchScore);
+            const bestDexMatch = scoredDex[0];
+            const resFull = await fetch(`https://api.tcgdex.net/v2/en/cards/${bestDexMatch.id}`);
             const dexData = await resFull.json();
             apiCard = {
               id: dexData.id,
