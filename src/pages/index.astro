@@ -1,0 +1,43 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { AuthButton } from '../components/AuthButton';
+---
+
+<Layout title="Poke-Rescam | Bienvenido Entrenador">
+	<main class="relative h-screen w-full flex flex-col items-center justify-center overflow-hidden">
+		<!-- Background Decorative Elements -->
+		<div class="absolute top-0 left-0 w-full h-full pointer-events-none overflow-hidden -z-10">
+			<div class="absolute top-1/4 left-1/4 w-96 h-96 bg-cyan-500/10 rounded-full blur-[128px] animate-pulse"></div>
+			<div class="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-[128px] animate-pulse" style="animation-delay: 2s;"></div>
+		</div>
+
+		<div class="text-center z-10 px-4">
+			<h1 class="text-6xl md:text-8xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-b from-white to-slate-400 mb-2">
+				POKE-RESCAM
+			</h1>
+			<p class="text-slate-400 text-lg md:text-xl font-medium mb-12 tracking-widest uppercase">
+				Colecciona • Escanea • Combate
+			</p>
+
+			<div class="space-y-6">
+        <AuthButton client:load />
+				<p class="text-xs text-slate-500 uppercase tracking-widest animate-bounce">
+					Inicia sesión con Google para comenzar
+				</p>
+			</div>
+		</div>
+
+		<!-- Footer -->
+		<div class="absolute bottom-8 left-0 w-full text-center px-4">
+			<p class="text-slate-600 text-[10px] uppercase tracking-widest">
+				Astro + React + Firebase + Tailwind
+			</p>
+		</div>
+	</main>
+</Layout>
+
+<style>
+	main {
+		background: radial-gradient(circle at center, #0f172a 0%, #020617 100%);
+	}
+</style>

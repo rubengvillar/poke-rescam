@@ -1,0 +1,91 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { ChevronLeft, Trophy, Zap, Brain, Target, Swords, Users } from 'lucide-react';
+---
+
+<Layout title="Mini Juegos | Poke-Rescam">
+	<main class="min-h-screen bg-slate-950 p-6 md:p-12">
+    <div class="max-w-6xl mx-auto">
+      <header class="mb-12">
+        <a href="/dashboard" class="flex items-center gap-2 text-slate-500 hover:text-white transition-colors mb-4 group">
+          <ChevronLeft size={20} class="group-hover:-translate-x-1 transition-transform" />
+          <span class="text-xs font-black uppercase tracking-widest">Volver al Dashboard</span>
+        </a>
+        <h1 class="text-5xl font-black text-white italic uppercase tracking-tighter">Zona de Juegos</h1>
+        <p class="text-slate-500 font-medium">Gana monedas y experiencia compitiendo</p>
+      </header>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <a href="/games/attribute-battle" class="group relative overflow-hidden bg-slate-900 border border-slate-800 p-8 rounded-[2rem] transition-all hover:scale-[1.02] hover:border-slate-700">
+          <div class="absolute inset-0 bg-gradient-to-br from-cyan-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+          <div class="relative z-10">
+            <div class="flex justify-between items-start mb-6">
+              <div class="p-4 bg-slate-950 rounded-2xl border border-slate-800">
+                <Zap class="text-cyan-400" size={32} />
+              </div>
+              <span class="text-[10px] font-black bg-cyan-500/20 text-cyan-400 px-2 py-1 rounded-md uppercase tracking-widest">RÁPIDO</span>
+            </div>
+            <h3 class="text-2xl font-black text-white italic uppercase mb-1">Batalla de Atributos</h3>
+            <p class="text-slate-500 text-sm">Compara stats y gana al rival</p>
+          </div>
+        </a>
+
+        <a href="/games/evolution-memory" class="group relative overflow-hidden bg-slate-900 border border-slate-800 p-8 rounded-[2rem] transition-all hover:scale-[1.02] hover:border-slate-700">
+          <div class="absolute inset-0 bg-gradient-to-br from-purple-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+          <div class="relative z-10">
+            <div class="flex justify-between items-start mb-6">
+              <div class="p-4 bg-slate-950 rounded-2xl border border-slate-800">
+                <Brain class="text-purple-400" size={32} />
+              </div>
+              <span class="text-[10px] font-black bg-purple-500/20 text-purple-400 px-2 py-1 rounded-md uppercase tracking-widest">PUZZLE</span>
+            </div>
+            <h3 class="text-2xl font-black text-white italic uppercase mb-1">Memoria Evolutiva</h3>
+            <p class="text-slate-500 text-sm">Empareja evoluciones</p>
+          </div>
+        </a>
+
+        <a href="/games/type-quiz" class="group relative overflow-hidden bg-slate-900 border border-slate-800 p-8 rounded-[2rem] transition-all hover:scale-[1.02] hover:border-slate-700">
+          <div class="absolute inset-0 bg-gradient-to-br from-emerald-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+          <div class="relative z-10">
+            <div class="flex justify-between items-start mb-6">
+              <div class="p-4 bg-slate-950 rounded-2xl border border-slate-800">
+                <Target class="text-emerald-400" size={32} />
+              </div>
+              <span class="text-[10px] font-black bg-emerald-500/20 text-emerald-400 px-2 py-1 rounded-md uppercase tracking-widest">TRIVIA</span>
+            </div>
+            <h3 class="text-2xl font-black text-white italic uppercase mb-1">Quiz de Tipos</h3>
+            <p class="text-slate-500 text-sm">Demuestra tu conocimiento</p>
+          </div>
+        </a>
+
+        <a href="/games/stadium-battle" class="group relative overflow-hidden bg-slate-900 border border-slate-800 p-8 rounded-[2rem] transition-all hover:scale-[1.02] hover:border-slate-700">
+          <div class="absolute inset-0 bg-gradient-to-br from-red-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+          <div class="relative z-10">
+            <div class="flex justify-between items-start mb-6">
+              <div class="p-4 bg-slate-950 rounded-2xl border border-slate-800">
+                <Swords class="text-red-400" size={32} />
+              </div>
+              <span class="text-[10px] font-black bg-red-500/20 text-red-400 px-2 py-1 rounded-md uppercase tracking-widest">COMPLEJO</span>
+            </div>
+            <h3 class="text-2xl font-black text-white italic uppercase mb-1">Stadium Battle</h3>
+            <p class="text-slate-500 text-sm">Combate táctico por turnos</p>
+          </div>
+        </a>
+
+        <a href="/games/betting-duel" class="group relative overflow-hidden bg-slate-900 border border-slate-800 p-8 rounded-[2rem] transition-all hover:scale-[1.02] hover:border-slate-700">
+          <div class="absolute inset-0 bg-gradient-to-br from-orange-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+          <div class="relative z-10">
+            <div class="flex justify-between items-start mb-6">
+              <div class="p-4 bg-slate-950 rounded-2xl border border-slate-800">
+                <Users class="text-orange-400" size={32} />
+              </div>
+              <span class="text-[10px] font-black bg-orange-500/20 text-orange-400 px-2 py-1 rounded-md uppercase tracking-widest">MULTIJUGADOR</span>
+            </div>
+            <h3 class="text-2xl font-black text-white italic uppercase mb-1">Duelo de Apuestas</h3>
+            <p class="text-slate-500 text-sm">Apuesta tus cartas contra amigos</p>
+          </div>
+        </a>
+      </div>
+    </div>
+  </main>
+</Layout>

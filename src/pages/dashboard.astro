@@ -1,0 +1,8 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { DashboardComponent } from '../components/DashboardComponent';
+---
+
+<Layout title="Dashboard | Poke-Rescam">
+	<DashboardComponent client:only="react" />
+</Layout>

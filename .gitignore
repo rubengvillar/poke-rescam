@@ -1,0 +1,25 @@
+# Astro
+dist/
+.astro/
+
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Environment Variables
+.env
+.env.production
+.env.local
+
+# Firebase
+.firebase/
+firebase-debug.log*
+firestore-debug.log*
+ui-debug.log*
+service-account.json
+
+# OS Files
+.DS_Store
+Thumbs.db
