@@ -97,87 +97,102 @@ const ScannerContent = () => {
 
       const foundType = typesList.find(t => normalizedText.includes(t.toUpperCase())) || "Unknown";
       const normalize = (str: string) => str.toUpperCase().replace(/[^A-Z0-9]/g, '').trim();
-      const cleanName = normalize(normalizedText.split('\n')[0] || "");
+      const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 2);
+      
       const cleanHP = normalizedText.match(/(\d+)\s*(HP|PS)/)?.[1] || "";
       const cleanNumMatch = normalizedText.match(/(\d+)\s*[\/\\]\s*(\d+)/);
       const cleanNumOnly = cleanNumMatch ? cleanNumMatch[1] : (normalizedText.match(/(\d{2,3})/)?.[1] || "");
+      const cleanName = normalizedText.split('\n')[0].replace(/[^A-Z]/g, '').trim();
       
+      // EXTRA: Extract Stage
+      const stageMatch = normalizedText.match(/(BASIC|STAGE 1|STAGE 2|FASE 1|FASE 2|LEVEL UP|RESTORED|VMAX|VSTAR|MEGA|GX|EX)/);
+      const detectedStage = stageMatch ? stageMatch[0] : "";
+
+      // EXTRA: Extract Attacks (Lines with symbols or numbers usually)
+      const potentialAttacks = lines.filter(l => l.length > 5 && /\d+/.test(l));
+
       let apiCard = null;
       
       try {
-        // Attempt 1: Name + Number (Fuzzy name)
-        let response = await fetch(`https://api.pokemontcg.io/v2/cards?q=name:"*${cleanName.toLowerCase()}*" number:"${cleanNumOnly}"`);
-        let data = await response.json();
+        // Fetch ALL potential candidates by number (most reliable anchor)
+        console.log(`Rigor Search: #${cleanNumOnly}`);
+        const response = await fetch(`https://api.pokemontcg.io/v2/cards?q=number:"${cleanNumOnly}"`);
+        const data = await response.json();
         
-        if (!data.data || data.data.length === 0) {
-          // Attempt 2: Just Number (Most reliable for OCR)
-          console.log("Searching by number only:", cleanNumOnly);
-          response = await fetch(`https://api.pokemontcg.io/v2/cards?q=number:"${cleanNumOnly}"`);
-          data = await response.json();
-          if (data.data && data.data.length > 0) {
-            // SCORING HEURISTIC: Match Name > Type (Visual/OCR) > HP > First
-            const scoredResults = data.data.map((c: any) => {
-              let score = 0;
-              const firstWord = cleanName.split(' ')[0].toLowerCase();
-              if (c.name.toLowerCase().includes(firstWord)) score += 20;
-              
-              // Type Match (OCR)
-              const cardTypes = (c.types || []).join(' ').toLowerCase();
-              const detectedType = foundType.toLowerCase();
-              if (detectedType !== 'unknown' && cardTypes.includes(detectedType)) score += 10;
-              
-              // Type Match (VISUAL COLOR)
-              const visualType = colorType.toLowerCase();
-              if (visualType !== 'unknown' && cardTypes.includes(visualType)) score += 15;
-              
-              if (c.hp === cleanHP) score += 5;
-              
-              // Penalty for Energy if HP was detected
-              if (c.supertype === 'Energy' && cleanHP) score -= 25;
-              
-              return { ...c, matchScore: score };
-            });
-            scoredResults.sort((a: any, b: any) => b.matchScore - a.matchScore);
+        if (data.data && data.data.length > 0) {
+          const scoredResults = data.data.map((c: any) => {
+            let score = 0;
+            const apiName = c.name.toUpperCase();
+            
+            // 1. Name Match (Weighted)
+            if (apiName.includes(cleanName)) score += 30;
+            else if (cleanName.includes(apiName.split(' ')[0])) score += 15;
+            
+            // 2. HP Match
+            if (c.hp === cleanHP) score += 20;
+            
+            // 3. Type Match (Visual + OCR)
+            const apiTypes = (c.types || []).join(' ').toUpperCase();
+            if (apiTypes.includes(foundType.toUpperCase())) score += 15;
+            if (apiTypes.includes(colorType.toUpperCase())) score += 15;
+            
+            // 4. Stage Match
+            const apiStage = (c.subtypes || []).join(' ').toUpperCase();
+            if (detectedStage && apiStage.includes(detectedStage)) score += 10;
+            
+            // 5. Attack Validation
+            const apiAttacks = (c.attacks || []).map((a: any) => a.name.toUpperCase());
+            const attackMatches = apiAttacks.filter((aName: string) => 
+              potentialAttacks.some(pa => pa.includes(aName))
+            ).length;
+            score += (attackMatches * 10);
+
+            // 6. Energy Penalty
+            if (c.supertype === 'Energy' && (cleanHP || detectedStage)) score -= 50;
+
+            return { ...c, rigorScore: score };
+          });
+
+          scoredResults.sort((a: any, b: any) => b.rigorScore - a.rigorScore);
+          console.log("Rigor Results:", scoredResults.map(r => `${r.name}: ${r.rigorScore}`));
+          
+          // Only accept if score is high enough
+          if (scoredResults[0].rigorScore > 20) {
             apiCard = scoredResults[0];
-          }
-        } else {
-          // Attempt 1 Match: Also try to pick best HP if multiple names match
-          if (data.data.length > 1 && cleanHP) {
-            apiCard = data.data.find((c: any) => c.hp === cleanHP) || data.data[0];
-          } else {
-            apiCard = data.data[0];
           }
         }
 
+        // TCGdex Fallback if rigor fails on primary
         if (!apiCard) {
-          // Attempt 3: TCGdex Fallback (By Number)
+          console.log("TCGdex Rigor Fallback...");
           const resDex = await fetch(`https://api.tcgdex.net/v2/en/cards?localId=${cleanNumOnly}`);
           const dataDex = await resDex.json();
           if (dataDex && dataDex.length > 0) {
-             const scoredDex = dataDex.map((c: any) => {
-              let score = 0;
-              const firstWord = cleanName.split(' ')[0].toLowerCase();
-              if (c.name.toLowerCase().includes(firstWord)) score += 10;
-              // Dex doesn't always have HP in summary, but let's try
-              return { ...c, matchScore: score };
+            const scoredDex = dataDex.map((c: any) => {
+              let s = 0;
+              const apiName = c.name.toUpperCase();
+              if (apiName.includes(cleanName)) s += 20;
+              if (c.stage && detectedStage && c.stage.toUpperCase().includes(detectedStage)) s += 10;
+              return { ...c, rigorScore: s };
             });
-            scoredDex.sort((a: any, b: any) => b.matchScore - a.matchScore);
-            const bestDexMatch = scoredDex[0];
-            const resFull = await fetch(`https://api.tcgdex.net/v2/en/cards/${bestDexMatch.id}`);
-            const dexData = await resFull.json();
+            scoredDex.sort((a: any, b: any) => b.rigorScore - a.rigorScore);
+            
+            const bestDex = scoredDex[0];
+            const resFull = await fetch(`https://api.tcgdex.net/v2/en/cards/${bestDex.id}`);
+            const dexFull = await resFull.json();
+            
             apiCard = {
-              id: dexData.id,
-              name: dexData.name,
-              hp: dexData.hp,
-              types: dexData.types,
-              images: { small: dexData.image + '/low.jpg', large: dexData.image + '/high.jpg' },
-              rarity: dexData.rarity,
-              subtypes: [dexData.stage]
+              ...dexFull,
+              hp: dexFull.hp,
+              types: dexFull.types,
+              images: { small: dexFull.image + '/low.jpg', large: dexFull.image + '/high.jpg' },
+              subtypes: [dexFull.stage],
+              rarity: dexFull.rarity
             };
           }
         }
       } catch (err) {
-        console.error("API Error:", err);
+        console.error("Rigor Engine Error:", err);
       }
 
       const finalImage = originalImage || imageSrc;
