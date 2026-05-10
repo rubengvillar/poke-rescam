@@ -394,8 +394,7 @@ const TradeRoom = ({ user, trade, inventory, onClose }: any) => {
     }
   };
 
-  const myCards = inventory.filter((c: any) => selectedIds.includes(c.id));
-  const friendCards = []; // We would need friend's card data too, but for now we show placeholders or IDs
+  const myCards = inventory.filter((c: any) => selectedIds.includes(c.firestoreId || c.id));
 
   return (
     <motion.div 
