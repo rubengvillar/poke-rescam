@@ -19,36 +19,55 @@ export const DashboardComponent = () => {
   };
 
   useEffect(() => {
+    console.log("Dashboard: Checking auth state...");
     const unsubscribe = onAuthStateChanged(auth, async (u) => {
+      console.log("Dashboard: Auth user:", u?.uid);
       if (u) {
         setUser(u);
         const trainerRef = doc(db, 'users', u.uid);
-        const trainerSnap = await getDoc(trainerRef);
-        
-        if (trainerSnap.exists()) {
-          setTrainerData(trainerSnap.data());
-        } else {
-          // Initial profile creation
-          const initialData = {
-            name: u.displayName || 'Entrenador',
-            level: 1,
-            xp: 0,
-            xpToNext: 1000,
-            coins: 500,
-            stardust: 100,
-            avatarUrl: u.photoURL || '',
-            insignias: [],
-            favoriteCardId: null,
-            attributes: { atk: 10, def: 10, lck: 10, nrg: 10 },
-            pointsAvailable: 5,
-            stats: { gamesWon: 0, winStreak: 0 },
-            items: { potion: 3, energyDrink: 2, luckCharm: 1 },
-            createdAt: new Date().toISOString()
-          };
-          await setDoc(trainerRef, initialData);
-          setTrainerData(initialData);
+        try {
+          const trainerSnap = await getDoc(trainerRef);
+          console.log("Dashboard: Trainer data exists:", trainerSnap.exists());
+          
+          if (trainerSnap.exists()) {
+            const data = trainerSnap.data();
+            // Data normalization for older accounts
+            const normalizedData = {
+              ...data,
+              attributes: data.attributes || { atk: 10, def: 10, lck: 10, nrg: 10 },
+              pointsAvailable: data.pointsAvailable ?? 5,
+              stats: data.stats || { gamesWon: 0, winStreak: 0 },
+              items: data.items || { potion: 3, energyDrink: 2, luckCharm: 1 }
+            };
+            setTrainerData(normalizedData);
+          } else {
+            console.log("Dashboard: Creating initial profile...");
+            // Initial profile creation
+            const initialData = {
+              uid: u.uid,
+              name: u.displayName || 'Entrenador',
+              level: 1,
+              xp: 0,
+              xpToNext: 1000,
+              coins: 500,
+              stardust: 100,
+              avatarUrl: u.photoURL || '',
+              insignias: [],
+              favoriteCardId: null,
+              attributes: { atk: 10, def: 10, lck: 10, nrg: 10 },
+              pointsAvailable: 5,
+              stats: { gamesWon: 0, winStreak: 0 },
+              items: { potion: 3, energyDrink: 2, luckCharm: 1 },
+              createdAt: new Date().toISOString()
+            };
+            await setDoc(trainerRef, initialData);
+            setTrainerData(initialData);
+          }
+        } catch (err) {
+          console.error("Dashboard: Firestore error:", err);
         }
       } else {
+        console.log("Dashboard: No user found, redirecting...");
         window.location.href = '/';
       }
       setLoading(false);
@@ -57,8 +76,9 @@ export const DashboardComponent = () => {
   }, []);
 
   if (loading) return (
-    <div className="flex h-screen w-full items-center justify-center bg-slate-950">
+    <div className="flex h-screen w-full flex-col items-center justify-center bg-slate-950 gap-4">
       <div className="w-16 h-16 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin"></div>
+      <p className="text-cyan-500 font-black italic animate-pulse tracking-widest text-xs uppercase">Conectando con el Centro Pokémon...</p>
     </div>
   );
 
