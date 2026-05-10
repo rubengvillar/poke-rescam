@@ -30,14 +30,30 @@ const ScannerContent = () => {
     setError(null);
     try {
       if (stream) stopCamera();
-      const s = await navigator.mediaDevices.getUserMedia({ 
+      const constraints: MediaStreamConstraints = {
         video: { 
           facingMode: { ideal: 'environment' },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
+          width: { min: 1280, ideal: 1920, max: 2560 },
+          height: { min: 720, ideal: 1080, max: 1440 },
           frameRate: { ideal: 30 }
-        } 
-      });
+        }
+      };
+      
+      const s = await navigator.mediaDevices.getUserMedia(constraints);
+      const track = s.getVideoTracks()[0];
+      
+      // Try to apply advanced focus constraints if supported
+      const capabilities = track.getCapabilities() as any;
+      if (capabilities.focusMode?.includes('continuous')) {
+        try {
+          await (track as any).applyConstraints({
+            advanced: [{ focusMode: 'continuous' }]
+          });
+        } catch (e) {
+          console.warn("Advanced focus not supported", e);
+        }
+      }
+
       setStream(s);
     } catch (err: any) {
       console.error("Camera Error:", err);
@@ -378,9 +394,13 @@ const ScannerContent = () => {
             
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                {/* Sombra exterior para enfocar el centro */}
-               <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-[2px]" style={{ clipPath: 'polygon(0% 0%, 0% 100%, 15% 100%, 15% 15%, 85% 15%, 85% 85%, 15% 85%, 15% 100%, 100% 100%, 100% 0%)' }} />
+               <div className="absolute inset-0 bg-slate-950/60" style={{ clipPath: 'polygon(0% 0%, 0% 100%, 15% 100%, 15% 15%, 85% 15%, 85% 85%, 15% 85%, 15% 100%, 100% 100%, 100% 0%)' }} />
                
                <div className={`w-[70%] aspect-[1/1.4] border-2 border-dashed transition-colors duration-300 rounded-3xl relative ${isStable ? 'border-emerald-400' : 'border-cyan-400/30'}`}>
+                   {/* ... corners ... */}
+                   <div className="absolute -top-12 left-0 w-full text-center">
+                     <p className="text-[9px] font-black uppercase tracking-[0.2em] text-cyan-400/80 animate-pulse">Alinea los bordes de la carta</p>
+                   </div>
                    <div className={`absolute -top-1 -left-1 w-10 h-10 border-t-4 border-l-4 rounded-tl-2xl transition-colors ${isStable ? 'border-emerald-400 shadow-[0_0_15px_rgba(52,211,153,0.5)]' : 'border-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.5)]'}`} />
                    <div className={`absolute -top-1 -right-1 w-10 h-10 border-t-4 border-r-4 rounded-tr-2xl transition-colors ${isStable ? 'border-emerald-400 shadow-[0_0_15px_rgba(52,211,153,0.5)]' : 'border-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.5)]'}`} />
                    <div className={`absolute -bottom-1 -left-1 w-10 h-10 border-b-4 border-l-4 rounded-bl-2xl transition-colors ${isStable ? 'border-emerald-400 shadow-[0_0_15px_rgba(52,211,153,0.5)]' : 'border-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.5)]'}`} />
