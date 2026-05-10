@@ -49,10 +49,12 @@ const ScannerContent = () => {
       const { data: { text } } = await Tesseract.recognize(imageSrc, 'eng');
       console.log("OCR Result:", text);
       
-      // Expanded keywords for better detection
+      // Expanded keywords for better detection (English + Spanish)
       const keywords = [
-        'HP', 'STAGE', 'ABILITY', 'ATTACK', 'WEAKNESS', 'RESISTANCE', 'RETREAT',
-        'EVOLVES', 'POKÉMON', 'TRAINER', 'ENERGY', 'BASIC', 'LEVEL', 'ITEM', 'SUPPORTER'
+        'HP', 'PS', 'STAGE', 'FASE', 'ABILITY', 'HABILIDAD', 'ATTACK', 'ATAQUE', 
+        'WEAKNESS', 'DEBILIDAD', 'RESISTANCE', 'RESISTENCIA', 'RETREAT', 'RETIRADA',
+        'EVOLVES', 'EVOLUCIONA', 'POKÉMON', 'TRAINER', 'ENTRENADOR', 'ENERGY', 'ENERGÍA', 
+        'BASIC', 'BÁSICO', 'LEVEL', 'ITEM', 'SUPPORTER', 'PARTIDARIO'
       ];
       
       const normalizedText = text.toUpperCase();
@@ -67,11 +69,18 @@ const ScannerContent = () => {
 
       const foundCard = {
         id: 'scanned-' + Date.now(),
-        name: "Carta Escaneada",
-        text: text.substring(0, 150),
+        name: normalizedText.split('\n')[0] || "Carta Escaneada",
+        hp: normalizedText.match(/(\d+)\s*(HP|PS)/)?.[1] || "???",
+        type: keywords.find(k => normalizedText.includes(k)) || "N/A",
+        text: text.substring(0, 300),
         images: { small: imageSrc },
         rarity: "Custom",
-        isCustom: true
+        isCustom: true,
+        attributes: {
+          hp: normalizedText.match(/(\d+)\s*(HP|PS)/)?.[1] || "???",
+          stage: normalizedText.match(/(STAGE|FASE)\s*(\d+)/i)?.[2] || "Basic",
+          attacks: text.split('\n').filter(l => l.length > 20).slice(0, 2)
+        }
       };
 
       if (auth.currentUser) {
