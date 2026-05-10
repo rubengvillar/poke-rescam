@@ -19,7 +19,9 @@ const ScannerContent = () => {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [result, setResult] = useState<any>(null);
+  const [batchScans, setBatchScans] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [ocrLang, setOcrLang] = useState('spa+eng');
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -46,7 +48,11 @@ const ScannerContent = () => {
   const processImage = async (imageSrc: string) => {
     setIsScanning(true);
     try {
-      const { data: { text } } = await Tesseract.recognize(imageSrc, 'eng');
+      const { data: { text } } = await Tesseract.recognize(
+        imageSrc,
+        ocrLang,
+        { logger: m => console.log(m) }
+      );
       console.log("OCR Result:", text);
       
       // Expanded keywords for better detection (English + Spanish)
@@ -64,14 +70,6 @@ const ScannerContent = () => {
 
       if (!hasKeyword && !hasNumberPattern) {
         showToast("No se detectó una carta válida. Intenta con más luz.", "error");
-        return;
-      }
-
-      const typesList = [
-        'Fire', 'Water', 'Grass', 'Lightning', 'Psychic', 'Fighting', 'Darkness', 'Metal', 'Fairy', 'Dragon', 'Colorless',
-        'Fuego', 'Agua', 'Planta', 'Rayo', 'Psíquico', 'Lucha', 'Oscuridad', 'Acero', 'Hada', 'Dragón', 'Incoloro'
-      ];
-      
       const foundType = typesList.find(t => normalizedText.includes(t.toUpperCase())) || "Unknown";
       const weaknessMatch = normalizedText.match(/(WEAKNESS|DEBILIDAD)\s*([A-Z]+)\s*([X×]\d+)/i);
 
@@ -80,23 +78,60 @@ const ScannerContent = () => {
       const cleanHP = normalizedText.match(/(\d+)\s*(HP|PS)/)?.[1] || "";
       const cleanNum = normalizedText.match(/(\d+\/\d+)/)?.[1] || "";
       
-      const cardId = `card-${cleanName}-${cleanHP}-${cleanNum.replace('/', '')}`;
+      // Phase 2: API Integration (Multi-API Fallback)
+      let apiCard = null;
+      const cleanNumOnly = cleanNum.split('/')[0];
       
+      try {
+        // Try Primary API (PokemonTCG.io)
+        const response = await fetch(`https://api.pokemontcg.io/v2/cards?q=name:"${cleanName.toLowerCase()}" number:"${cleanNumOnly}"`);
+        const data = await response.json();
+        if (data.data && data.data.length > 0) {
+          apiCard = data.data[0];
+        } else {
+          // Try Fallback API (TCGdex)
+          console.log("TCGdex Fallback...");
+          const resDex = await fetch(`https://api.tcgdex.net/v2/en/cards?name=${cleanName.toLowerCase()}&localId=${cleanNumOnly}`);
+          const dataDex = await resDex.json();
+          if (dataDex && dataDex.length > 0) {
+            // Get full details from TCGdex
+            const resFull = await fetch(`https://api.tcgdex.net/v2/en/cards/${dataDex[0].id}`);
+            apiCard = await resFull.json();
+            // Map TCGdex format to our internal format
+            apiCard = {
+              id: apiCard.id,
+              name: apiCard.name,
+              hp: apiCard.hp,
+              types: apiCard.types,
+              images: { small: apiCard.image + '/low.jpg', large: apiCard.image + '/high.jpg' },
+              rarity: apiCard.rarity,
+              subtypes: [apiCard.stage]
+            };
+          }
+        }
+      } catch (err) {
+        console.error("API Fallback Error:", err);
+      }
+
       const foundCard = {
-        id: cardId,
-        name: normalizedText.split('\n')[0] || "Carta Escaneada",
-        hp: normalizedText.match(/(\d+)\s*(HP|PS)/)?.[1] || "???",
-        type: foundType,
+        id: apiCard?.id || `card-${cleanName}-${cleanHP}-${cleanNum.replace('/', '')}`,
+        name: apiCard?.name || normalizedText.split('\n')[0] || "Carta Escaneada",
+        hp: apiCard?.hp || cleanHP || "???",
+        type: apiCard?.types?.[0] || foundType,
         text: text.substring(0, 300),
-        images: { small: imageSrc },
-        rarity: "Custom",
-        isCustom: true,
+        images: { 
+          small: apiCard?.images?.small || imageSrc,
+          large: apiCard?.images?.large || imageSrc
+        },
+        rarity: apiCard?.rarity || "Custom",
+        isCustom: !apiCard,
+        grade: condition,
         attributes: {
-          hp: normalizedText.match(/(\d+)\s*(HP|PS)/)?.[1] || "???",
-          stage: normalizedText.match(/(STAGE|FASE)\s*(\d+)/i)?.[2] || "Basic",
-          type: foundType,
-          weakness: weaknessMatch ? `${weaknessMatch[2]} ${weaknessMatch[3]}` : "None",
-          attacks: text.split('\n').filter(l => l.length > 20).slice(0, 2)
+          hp: apiCard?.hp || cleanHP || "???",
+          stage: apiCard?.subtypes?.[0] || "Basic",
+          type: apiCard?.types?.[0] || foundType,
+          weakness: apiCard?.weaknesses?.[0] ? `${apiCard.weaknesses[0].type} ${apiCard.weaknesses[0].value}` : "None",
+          attacks: apiCard?.attacks?.map((a: any) => a.name) || text.split('\n').filter(l => l.length > 20).slice(0, 2)
         }
       };
 
@@ -117,8 +152,9 @@ const ScannerContent = () => {
           scannedAt: serverTimestamp()
         });
       }
-      setResult(foundCard);
-      showToast("¡Carta añadida a tu colección!");
+
+      setBatchScans(prev => [foundCard, ...prev]);
+      showToast(`¡${foundCard.name} añadida!`, "success");
     } catch (err) {
       showToast("Error al procesar la imagen", "error");
     } finally {
@@ -126,6 +162,32 @@ const ScannerContent = () => {
     }
   };
 
+  const analyzeCardCondition = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+    // Basic Heuristic: Check for "whitening" on edges and centering
+    const getBrightness = (x: number, y: number, w: number, h: number) => {
+      const pixels = ctx.getImageData(x, y, w, h).data;
+      let sum = 0;
+      for (let i = 0; i < pixels.length; i += 4) {
+        sum += (pixels[i] + pixels[i + 1] + pixels[i + 2]) / 3;
+      }
+      return sum / (w * h);
+    };
+
+    // Check 4 edges
+    const top = getBrightness(0, 0, width, 10);
+    const bottom = getBrightness(0, height - 10, width, 10);
+    const left = getBrightness(0, 0, 10, height);
+    const right = getBrightness(width - 10, 0, 10, height);
+
+    // Centering score (0 to 5)
+    const centeringDiff = Math.abs(top - bottom) + Math.abs(left - right);
+    const centeringScore = Math.max(0, 5 - (centeringDiff / 20));
+
+    // Wear score (0 to 5) - High brightness on edges might mean whitening
+    const avgEdge = (top + bottom + left + right) / 4;
+    const wearScore = avgEdge > 200 ? 3 : 5;
+
+    return Math.round(centeringScore + wearScore);
   const captureFromVideo = () => {
     if (!videoRef.current || !canvasRef.current) return;
     
@@ -136,13 +198,37 @@ const ScannerContent = () => {
     }
 
     const canvas = canvasRef.current;
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
     const ctx = canvas.getContext('2d');
-    ctx?.drawImage(video, 0, 0);
+    if (!ctx) return;
+
+    // Portrait card crop
+    const cropWidth = video.videoWidth * 0.7;
+    const cropHeight = cropWidth * 1.4;
+    const startX = (video.videoWidth - cropWidth) / 2;
+    const startY = (video.videoHeight - cropHeight) / 2;
+
+    canvas.width = cropWidth;
+    canvas.height = cropHeight;
+
+    // 1. Draw the cropped image
+    ctx.drawImage(video, startX, startY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
     
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-    processImage(dataUrl);
+    // Analyze condition before destroying image with filters
+    const condition = analyzeCardCondition(ctx, cropWidth, cropHeight);
+
+    // 2. Pre-processing: Grayscale and Contrast
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+    for (let i = 0; i < data.length; i += 4) {
+      const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+      const threshold = 128;
+      const val = avg > threshold ? 255 : 0;
+      data[i] = data[i + 1] = data[i + 2] = val;
+    }
+    ctx.putImageData(imageData, 0, 0);
+    
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+    processImage(dataUrl, condition);
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -157,6 +243,57 @@ const ScannerContent = () => {
     };
     reader.readAsDataURL(file);
   };
+
+  const [isStable, setIsStable] = useState(false);
+  const stabilityCounter = useRef(0);
+  const lastFrameData = useRef<Uint8ClampedArray | null>(null);
+
+  useEffect(() => {
+    let animationFrame: number;
+    
+    const checkStability = () => {
+      if (stream && videoRef.current && canvasRef.current && !isScanning) {
+        const video = videoRef.current;
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        
+        if (ctx && video.videoWidth > 0) {
+          // Check a small central area for stability
+          const checkSize = 100;
+          const x = (video.videoWidth - checkSize) / 2;
+          const y = (video.videoHeight - checkSize) / 2;
+          
+          ctx.drawImage(video, x, y, checkSize, checkSize, 0, 0, checkSize, checkSize);
+          const currentFrame = ctx.getImageData(0, 0, checkSize, checkSize).data;
+          
+          if (lastFrameData.current) {
+            let diff = 0;
+            for (let i = 0; i < currentFrame.length; i += 4) {
+              diff += Math.abs(currentFrame[i] - lastFrameData.current[i]);
+            }
+            
+            const normalizedDiff = diff / (checkSize * checkSize);
+            if (normalizedDiff < 15) { // Threshold for "stable"
+              stabilityCounter.current++;
+              if (stabilityCounter.current > 30) { // Stable for ~1 second
+                setIsStable(true);
+                captureFromVideo();
+                stabilityCounter.current = -60; // Wait 2 seconds before next auto-capture
+              }
+            } else {
+              stabilityCounter.current = 0;
+              setIsStable(false);
+            }
+          }
+          lastFrameData.current = currentFrame;
+        }
+      }
+      animationFrame = requestAnimationFrame(checkStability);
+    };
+
+    checkStability();
+    return () => cancelAnimationFrame(animationFrame);
+  }, [stream, isScanning]);
 
   useEffect(() => {
     if (stream && videoRef.current) {
@@ -244,13 +381,47 @@ const ScannerContent = () => {
             <canvas ref={canvasRef} className="hidden" />
             
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="w-64 h-88 border-2 border-dashed border-cyan-400/30 rounded-3xl relative">
-                  <div className="absolute -top-1 -left-1 w-10 h-10 border-t-4 border-l-4 border-cyan-400 rounded-tl-2xl" />
-                  <div className="absolute -top-1 -right-1 w-10 h-10 border-t-4 border-r-4 border-cyan-400 rounded-tr-2xl" />
-                  <div className="absolute -bottom-1 -left-1 w-10 h-10 border-b-4 border-l-4 border-cyan-400 rounded-bl-2xl" />
-                  <div className="absolute -bottom-1 -right-1 w-10 h-10 border-b-4 border-r-4 border-cyan-400 rounded-br-2xl" />
-              </div>
+               {/* Sombra exterior para enfocar el centro */}
+               <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-[2px]" style={{ clipPath: 'polygon(0% 0%, 0% 100%, 15% 100%, 15% 15%, 85% 15%, 85% 85%, 15% 85%, 15% 100%, 100% 100%, 100% 0%)' }} />
+               
+               <div className={`w-[70%] aspect-[1/1.4] border-2 border-dashed transition-colors duration-300 rounded-3xl relative ${isStable ? 'border-emerald-400' : 'border-cyan-400/30'}`}>
+                   <div className={`absolute -top-1 -left-1 w-10 h-10 border-t-4 border-l-4 rounded-tl-2xl transition-colors ${isStable ? 'border-emerald-400 shadow-[0_0_15px_rgba(52,211,153,0.5)]' : 'border-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.5)]'}`} />
+                   <div className={`absolute -top-1 -right-1 w-10 h-10 border-t-4 border-r-4 rounded-tr-2xl transition-colors ${isStable ? 'border-emerald-400 shadow-[0_0_15px_rgba(52,211,153,0.5)]' : 'border-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.5)]'}`} />
+                   <div className={`absolute -bottom-1 -left-1 w-10 h-10 border-b-4 border-l-4 rounded-bl-2xl transition-colors ${isStable ? 'border-emerald-400 shadow-[0_0_15px_rgba(52,211,153,0.5)]' : 'border-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.5)]'}`} />
+                   <div className={`absolute -bottom-1 -right-1 w-10 h-10 border-b-4 border-r-4 rounded-br-2xl transition-colors ${isStable ? 'border-emerald-400 shadow-[0_0_15px_rgba(52,211,153,0.5)]' : 'border-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.5)]'}`} />
+                   
+                   {/* Línea de escaneo animada */}
+                   <motion.div 
+                     animate={{ top: ['10%', '90%', '10%'] }}
+                     transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
+                     className={`absolute left-4 right-4 h-1 bg-gradient-to-r from-transparent via-cyan-400 to-transparent shadow-[0_0_15px_rgba(34,211,238,0.8)] z-10 ${isStable ? 'opacity-0' : 'opacity-100'}`}
+                   />
+
+                   <div className="absolute inset-0 flex items-center justify-center">
+                      <p className={`text-[10px] font-black uppercase tracking-[0.3em] transition-colors ${isStable ? 'text-emerald-400' : 'text-cyan-400/50'}`}>
+                        {isStable ? 'Capturando...' : 'Mantén estable'}
+                      </p>
+                   </div>
+               </div>
             </div>
+
+            {/* RECENT SCANS CAROUSEL */}
+            {batchScans.length > 0 && (
+              <div className="absolute bottom-28 left-0 w-full px-6 flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+                <AnimatePresence>
+                  {batchScans.map((scan, i) => (
+                    <motion.div 
+                      key={scan.id + i}
+                      initial={{ opacity: 0, scale: 0.5, x: -20 }}
+                      animate={{ opacity: 1, scale: 1, x: 0 }}
+                      className="w-12 h-16 rounded-lg border border-white/20 overflow-hidden flex-shrink-0 shadow-lg"
+                    >
+                      <img src={scan.images?.small} className="w-full h-full object-cover" />
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+              </div>
+            )}
 
             <div className="absolute bottom-8 left-0 w-full flex justify-center gap-4 px-8">
               <button 
@@ -262,14 +433,23 @@ const ScannerContent = () => {
               <button 
                 disabled={isScanning}
                 onClick={captureFromVideo}
-                className="flex-1 bg-cyan-500 text-black py-5 rounded-2xl font-black uppercase tracking-widest flex items-center justify-center gap-3 shadow-lg shadow-cyan-500/20 active:scale-95 transition-all"
+                className="flex-1 bg-white text-black py-5 rounded-2xl font-black uppercase tracking-widest flex items-center justify-center gap-3 shadow-lg hover:bg-cyan-400 transition-all active:scale-95"
               >
                 {isScanning ? <RefreshCw className="animate-spin" size={24} /> : (
                   <>
-                    <ImageIcon size={20} /> Analizar
+                    <div className="w-4 h-4 bg-black rounded-full animate-pulse" />
+                    Capturar
                   </>
                 )}
               </button>
+              {batchScans.length > 0 && (
+                 <button 
+                   onClick={() => setResult(batchScans[0])}
+                   className="p-5 bg-emerald-500 text-black rounded-2xl font-black shadow-lg shadow-emerald-500/20 hover:scale-105 transition-all"
+                 >
+                   <CheckCircle2 size={24} />
+                 </button>
+               )}
             </div>
           </div>
         )}

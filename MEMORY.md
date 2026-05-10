@@ -68,7 +68,12 @@ Este archivo registra el contexto, los avances y el estado actual de `poke_resca
     - Se estableció el sistema de **Doble Confirmación** (Double-Check) para evitar estafas.
     - Sincronización instantánea mediante Firestore `onSnapshot`.
     - Animaciones de éxito y transición fluida entre estados.
-4.  **Optimización**: Revisar el rendimiento de la carga de imágenes de cartas.
+- **Hito**: Optimización de Inventario y Control de Duplicados.
+    - Se implementó el **Stacking de Cartas**: Las cartas repetidas se agrupan visualmente con un contador (x2, x3), limpiando la interfaz.
+    - Se corrigió el error de **Keys duplicadas** en React usando IDs de Firestore únicos para cada instancia.
+    - Se implementó la **Prevención de Escaneo Duplicado**: El sistema bloquea el escaneo de una carta que el usuario ya posee basándose en un ID normalizado (Nombre + HP + Número).
+    - Se mejoró el **Procesamiento de Imagen**: Ahora el escáner realiza un **Auto-Crop** (recorte) al área del marco guía, eliminando el fondo y mejorando el OCR.
+    - Se pulió la estética del escáner con efectos de **Glassmorphism**, desenfoque de fondo y líneas de escaneo animadas.
 
 ---
 *Mantener este registro actualizado es vital para la continuidad del desarrollo.*
