@@ -75,7 +75,12 @@ const ScannerContent = () => {
       const foundType = typesList.find(t => normalizedText.includes(t.toUpperCase())) || "Unknown";
       const weaknessMatch = normalizedText.match(/(WEAKNESS|DEBILIDAD)\s*([A-Z]+)\s*([X×]\d+)/i);
 
-      const cardId = `${normalizedText.split('\n')[0]}-${normalizedText.match(/\d+\/\d+/)?.[0] || 'unique'}`;
+      const normalize = (str: string) => str.toUpperCase().replace(/[^A-Z0-9]/g, '').trim();
+      const cleanName = normalize(normalizedText.split('\n')[0] || "");
+      const cleanHP = normalizedText.match(/(\d+)\s*(HP|PS)/)?.[1] || "";
+      const cleanNum = normalizedText.match(/(\d+\/\d+)/)?.[1] || "";
+      
+      const cardId = `card-${cleanName}-${cleanHP}-${cleanNum.replace('/', '')}`;
       
       const foundCard = {
         id: cardId,
