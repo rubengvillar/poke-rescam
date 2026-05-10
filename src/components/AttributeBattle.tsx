@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Shield, Zap, Heart, Trophy, XCircle, ChevronLeft, RefreshCw, Coins } from 'lucide-react';
+import { Shield, Zap, Heart, Trophy, XCircle, ChevronLeft, RefreshCw, Coins, Sparkles } from 'lucide-react';
 import { auth, db } from '../lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc, updateDoc, increment, collection, getDocs, query, where, limit } from 'firebase/firestore';
@@ -48,6 +48,20 @@ export const AttributeBattle = () => {
     }
   };
 
+  const getCardStat = (card: any, statId: string): number => {
+    if (!card) return 0;
+    const val = parseInt(card[statId]);
+    if (!isNaN(val)) return val;
+    
+    // Default values if missing
+    switch(statId) {
+      case 'hp': return 40;
+      case 'attack': return 10;
+      case 'defense': return 10;
+      default: return 0;
+    }
+  };
+
   const generateBotCard = async () => {
     const cardsRef = collection(db, 'cards');
     const randomSeed = Math.random();
@@ -68,8 +82,8 @@ export const AttributeBattle = () => {
     setBotCard(bot);
 
     setTimeout(() => {
-      const userVal = parseInt(userCard[attrId]) || 50;
-      const botVal = parseInt(bot[attrId]) || 50;
+      const userVal = getCardStat(userCard, attrId);
+      const botVal = getCardStat(bot, attrId);
 
       if (userVal > botVal) {
         setWinner('user');
@@ -134,7 +148,7 @@ export const AttributeBattle = () => {
                       <div className={`p-2 bg-slate-950 rounded-lg ${attr.color}`}>{attr.icon}</div>
                       <span className="text-slate-300 font-bold uppercase text-xs">{attr.name}</span>
                     </div>
-                    <span className="text-white font-black italic">{userCard?.[attr.id] || '??'}</span>
+                    <span className="text-white font-black italic">{getCardStat(userCard, attr.id)}</span>
                   </button>
                 ))}
               </div>
@@ -151,12 +165,43 @@ export const AttributeBattle = () => {
                    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-6 h-[70vh] overflow-y-auto pr-4">
                       {inventory.length === 0 ? (
                         <div className="col-span-full text-center py-20 text-slate-500 font-bold uppercase">No tienes cartas en tu inventario</div>
-                      ) : inventory.map(card => (
-                        <div key={card.id} onClick={() => { setUserCard(card); setIsChoosing(false); }} className="cursor-pointer hover:scale-105 transition-transform">
-                           <img src={card.images?.small} className="w-full rounded-lg border border-slate-800" />
-                           <p className="mt-2 text-[8px] font-black text-white uppercase truncate">{card.name}</p>
-                        </div>
-                      ))}
+                      ) : inventory.map(card => {
+                        const isFallback = card.images?.isFallback || !card.images?.small?.startsWith('http');
+                        return (
+                          <div 
+                            key={card.id} 
+                            onClick={() => { setUserCard(card); setIsChoosing(false); }} 
+                            className="cursor-pointer group relative"
+                          >
+                             <div className={`aspect-[3/4] rounded-xl overflow-hidden border-2 border-slate-800 group-hover:border-cyan-500 transition-all shadow-xl bg-slate-900 flex flex-col ${isFallback ? 'p-2' : ''}`}>
+                               {isFallback ? (
+                                 <div className="w-full h-full bg-gradient-to-br from-slate-700 to-slate-900 flex flex-col items-center justify-center relative overflow-hidden">
+                                    <div className="absolute inset-0 bg-[url('/img/card-pattern.png')] opacity-5" />
+                                    <div className="absolute top-2 left-2 right-2 flex justify-between items-center text-[6px] font-black text-white/70 uppercase z-10">
+                                       <span className="truncate max-w-[40px]">{card.name}</span>
+                                       <span>{getCardStat(card, 'hp')} HP</span>
+                                    </div>
+                                    <img src={card.images?.small} className="w-4/5 h-4/5 object-contain drop-shadow-2xl relative z-10" />
+                                    <div className="absolute bottom-2 right-2 z-10">
+                                       <Sparkles size={10} className="text-white/20" />
+                                    </div>
+                                    {/* Holographic shine effect */}
+                                    <div className="absolute inset-0 bg-gradient-to-tr from-white/0 via-white/5 to-white/0 opacity-0 group-hover:opacity-100 transition-opacity duration-700 -translate-x-full group-hover:translate-x-full" />
+                                 </div>
+                               ) : (
+                                 <img src={card.images?.small} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                               )}
+                            </div>
+                            <div className="mt-2 flex flex-col">
+                               <p className="text-[8px] font-black text-white uppercase truncate group-hover:text-cyan-400 transition-colors">{card.name}</p>
+                               <div className="flex gap-1 mt-1">
+                                  <span className="text-[6px] font-bold text-slate-500 uppercase">ATK {getCardStat(card, 'attack')}</span>
+                                  <span className="text-[6px] font-bold text-slate-500 uppercase">DEF {getCardStat(card, 'defense')}</span>
+                               </div>
+                            </div>
+                          </div>
+                        );
+                      })}
                    </div>
                 </motion.div>
               )}
@@ -195,14 +240,14 @@ export const AttributeBattle = () => {
               <>
                 <Trophy className="text-yellow-500 mx-auto mb-6" size={64} />
                 <h2 className="text-5xl font-black text-white italic uppercase mb-2">¡VICTORIA!</h2>
-                <p className="text-slate-400 mb-8 text-sm">Tu {userCard.name} ({userCard[selectedAttr!]}) superó al rival ({botCard[selectedAttr!]}).</p>
+                <p className="text-slate-400 mb-8 text-sm">Tu {userCard.name} ({getCardStat(userCard, selectedAttr!)}) superó al rival ({getCardStat(botCard, selectedAttr!)}).</p>
                 <div className="bg-yellow-500 text-black px-8 py-3 rounded-2xl font-black mb-8 inline-block">+{coinsWon} MONEDAS</div>
               </>
             ) : winner === 'bot' ? (
               <>
                 <XCircle className="text-red-500 mx-auto mb-6" size={64} />
                 <h2 className="text-5xl font-black text-white italic uppercase mb-2">DERROTA</h2>
-                <p className="text-slate-400 mb-8 text-sm">El rival ({botCard[selectedAttr!]}) fue más fuerte que tu {userCard.name} ({userCard[selectedAttr!]}).</p>
+                <p className="text-slate-400 mb-8 text-sm">El rival ({getCardStat(botCard, selectedAttr!)}) fue más fuerte que tu {userCard.name} ({getCardStat(userCard, selectedAttr!)}).</p>
               </>
             ) : (
               <h2 className="text-5xl font-black text-white italic uppercase mb-2">EMPATE</h2>

@@ -1,25 +1,40 @@
 import React, { useState, useRef, useEffect } from 'react';
 import Tesseract from 'tesseract.js';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Camera, RefreshCw, X, Sparkles, CheckCircle2 } from 'lucide-react';
+import { Camera, RefreshCw, X, Sparkles, CheckCircle2, ChevronLeft, Upload, Image as ImageIcon } from 'lucide-react';
+import { ToastProvider, useToast } from './Toast';
 import { db, auth } from '../lib/firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 
 export const ScannerComponent = () => {
+  return (
+    <ToastProvider>
+       <ScannerContent />
+    </ToastProvider>
+  );
+};
+
+const ScannerContent = () => {
+  const { showToast } = useToast();
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const startCamera = async () => {
+    setError(null);
     try {
-      const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      if (stream) stopCamera();
+      const s = await navigator.mediaDevices.getUserMedia({ 
+        video: { facingMode: { ideal: 'environment' } } 
+      });
       setStream(s);
-      if (videoRef.current) videoRef.current.srcObject = s;
-    } catch (err) {
-      setError("No se pudo acceder a la cámara. Asegúrate de dar permisos.");
+    } catch (err: any) {
+      console.error("Camera Error:", err);
+      showToast("No se pudo iniciar cámara. Usa la opción de subir foto.", "warning");
     }
   };
 
@@ -28,146 +43,204 @@ export const ScannerComponent = () => {
     setStream(null);
   };
 
-  const captureAndScan = async () => {
-    if (!videoRef.current || !canvasRef.current) return;
+  const processImage = async (imageSrc: string) => {
     setIsScanning(true);
-    
-    const context = canvasRef.current.getContext('2d');
-    canvasRef.current.width = videoRef.current.videoWidth;
-    canvasRef.current.height = videoRef.current.videoHeight;
-    context?.drawImage(videoRef.current, 0, 0);
-    
-    const imageData = canvasRef.current.toDataURL('image/png');
-    
     try {
-      // 1. OCR to find card name/fields
-      const { data: { text } } = await Tesseract.recognize(imageData, 'eng');
-      console.log("OCR Result:", text);
+      const { data: { text } } = await Tesseract.recognize(imageSrc, 'eng');
+      
+      // Verification logic: Search for common TCG keywords
+      const keywords = ['HP', 'POKEMON', 'STAGE', 'ABILITY', 'ATTACK', 'WEAKNESS', 'RESISTANCE', 'RETREAT'];
+      const normalizedText = text.toUpperCase();
+      const isPokemonCard = keywords.some(k => normalizedText.includes(k));
 
-      // 2. Simple logic to "identify" (Simplified for demo)
-      // In a real app, you'd compare this text or a visual hash with the database
+      if (!isPokemonCard) {
+        showToast("No parece ser una carta de Pokémon válida", "error");
+        return;
+      }
+
       const foundCard = {
         id: 'scanned-' + Date.now(),
-        name: "Pokémon Detectado",
-        text: text.substring(0, 100),
-        images: { small: imageData }, // Use captured image for custom cards
+        name: "Carta Escaneada",
+        text: text.substring(0, 150),
+        images: { small: imageSrc },
         rarity: "Custom",
         isCustom: true
       };
 
-      setResult(foundCard);
-      
-      // 3. Save to inventory
       if (auth.currentUser) {
         await addDoc(collection(db, `users/${auth.currentUser.uid}/inventory`), {
           ...foundCard,
           scannedAt: serverTimestamp()
         });
       }
+      setResult(foundCard);
+      showToast("¡Carta añadida a tu colección!");
     } catch (err) {
-      setError("Error al procesar la imagen.");
+      showToast("Error al procesar la imagen", "error");
     } finally {
       setIsScanning(false);
     }
   };
 
+  const captureFromVideo = () => {
+    if (!videoRef.current || !canvasRef.current) return;
+    
+    const video = videoRef.current;
+    if (video.videoWidth === 0) {
+      showToast("Esperando señal de video...", "info");
+      return;
+    }
+
+    const canvas = canvasRef.current;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    ctx?.drawImage(video, 0, 0);
+    
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+    processImage(dataUrl);
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      if (event.target?.result) {
+        processImage(event.target.result as string);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  useEffect(() => {
+    if (stream && videoRef.current) {
+      videoRef.current.srcObject = stream;
+    }
+  }, [stream]);
+
   useEffect(() => {
     return () => stopCamera();
   }, []);
 
+  console.log("ScannerContent rendering. Stream:", !!stream, "Result:", !!result);
+
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6">
-      <AnimatePresence mode="wait">
-        {!stream && !result ? (
-          <motion.div 
-            key="start"
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="text-center"
-          >
-            <div className="w-24 h-24 bg-cyan-500/10 rounded-[2rem] flex items-center justify-center mx-auto mb-6 border border-cyan-500/20 shadow-[0_0_50px_rgba(6,182,212,0.15)]">
+    <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 relative overflow-hidden">
+      <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
+         <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-cyan-500/10 blur-[120px] rounded-full" />
+      </div>
+
+      <header className="absolute top-8 left-8 z-[60]">
+        <a href="/dashboard" className="flex items-center gap-2 text-slate-500 hover:text-white transition-colors group">
+          <ChevronLeft size={20} className="group-hover:-translate-x-1 transition-transform" />
+          <span className="text-xs font-black uppercase tracking-widest text-white/50">Dashboard</span>
+        </a>
+      </header>
+
+      <input 
+        type="file" 
+        ref={fileInputRef} 
+        className="hidden" 
+        accept="image/*" 
+        onChange={handleFileUpload} 
+      />
+
+      <div className="w-full max-w-4xl flex flex-col items-center justify-center">
+        {!stream && !result && (
+          <div className="text-center">
+            <div className="w-24 h-24 bg-cyan-500/10 rounded-[2.5rem] flex items-center justify-center mx-auto mb-8 border border-cyan-500/20 shadow-[0_0_50px_rgba(6,182,212,0.1)]">
               <Camera className="text-cyan-400" size={40} />
             </div>
-            <h2 className="text-3xl font-black text-white italic uppercase mb-2">Escáner de Cartas</h2>
-            <p className="text-slate-500 mb-8 max-w-xs mx-auto">Apunta a una carta física para identificarla y añadirla a tu colección</p>
-            <button 
-              onClick={startCamera}
-              className="bg-white text-black px-12 py-4 rounded-2xl font-black uppercase tracking-widest hover:bg-cyan-400 transition-colors"
-            >
-              Iniciar Cámara
-            </button>
-          </motion.div>
-        ) : stream && !result ? (
-          <motion.div 
-            key="camera"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="relative w-full max-w-md aspect-[3/4] bg-black rounded-[2.5rem] overflow-hidden border-2 border-slate-800 shadow-2xl"
-          >
-            <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" />
+            <h2 className="text-4xl font-black text-white italic uppercase mb-3 tracking-tighter">Escáner de Cartas</h2>
+            <p className="text-slate-500 mb-10 max-w-xs mx-auto text-sm font-medium">Usa tu cámara para identificar cartas o sube una imagen desde tu galería</p>
+            
+            <div className="flex flex-col gap-4">
+              <button 
+                onClick={startCamera}
+                className="bg-white text-black px-12 py-5 rounded-2xl font-black uppercase tracking-widest hover:bg-cyan-400 transition-all shadow-xl active:scale-95"
+              >
+                Abrir Cámara
+              </button>
+              <button 
+                onClick={() => fileInputRef.current?.click()}
+                className="bg-slate-900 text-white px-12 py-5 rounded-2xl font-black uppercase tracking-widest border border-white/5 hover:bg-slate-800 transition-all flex items-center justify-center gap-3"
+              >
+                <Upload size={20} /> Subir Foto
+              </button>
+            </div>
+          </div>
+        )}
+
+        {stream && !result && (
+          <div className="relative w-full max-w-md aspect-[3/4] bg-slate-900 rounded-[3rem] overflow-hidden border-2 border-white/10 shadow-2xl">
+            <video 
+              ref={videoRef} 
+              autoPlay 
+              playsInline 
+              muted 
+              className="w-full h-full object-cover"
+            />
             <canvas ref={canvasRef} className="hidden" />
             
-            {/* Viewfinder Overlay */}
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="w-64 h-88 border-2 border-dashed border-cyan-400/50 rounded-2xl">
-                 <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-cyan-400 rounded-tl-xl" />
-                 <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-cyan-400 rounded-tr-xl" />
-                 <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-cyan-400 rounded-bl-xl" />
-                 <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-cyan-400 rounded-br-xl" />
+              <div className="w-64 h-88 border-2 border-dashed border-cyan-400/30 rounded-3xl relative">
+                  <div className="absolute -top-1 -left-1 w-10 h-10 border-t-4 border-l-4 border-cyan-400 rounded-tl-2xl" />
+                  <div className="absolute -top-1 -right-1 w-10 h-10 border-t-4 border-r-4 border-cyan-400 rounded-tr-2xl" />
+                  <div className="absolute -bottom-1 -left-1 w-10 h-10 border-b-4 border-l-4 border-cyan-400 rounded-bl-2xl" />
+                  <div className="absolute -bottom-1 -right-1 w-10 h-10 border-b-4 border-r-4 border-cyan-400 rounded-br-2xl" />
               </div>
             </div>
 
             <div className="absolute bottom-8 left-0 w-full flex justify-center gap-4 px-8">
               <button 
                 onClick={stopCamera}
-                className="p-4 bg-slate-900/80 backdrop-blur-md rounded-2xl text-white hover:bg-red-500 transition-colors"
+                className="p-5 bg-black/50 backdrop-blur-xl rounded-2xl text-white border border-white/10 hover:bg-red-500/20 hover:text-red-400 transition-all"
               >
                 <X size={24} />
               </button>
               <button 
                 disabled={isScanning}
-                onClick={captureAndScan}
-                className="flex-1 bg-cyan-500 text-black py-4 rounded-2xl font-black uppercase tracking-widest flex items-center justify-center gap-2"
+                onClick={captureFromVideo}
+                className="flex-1 bg-cyan-500 text-black py-5 rounded-2xl font-black uppercase tracking-widest flex items-center justify-center gap-3 shadow-lg shadow-cyan-500/20 active:scale-95 transition-all"
               >
-                {isScanning ? <RefreshCw className="animate-spin" size={20} /> : "Analizar Carta"}
+                {isScanning ? <RefreshCw className="animate-spin" size={24} /> : (
+                  <>
+                    <ImageIcon size={20} /> Analizar
+                  </>
+                )}
               </button>
             </div>
-          </motion.div>
-        ) : (
-          <motion.div 
-            key="result"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="bg-slate-900 border border-slate-800 p-8 rounded-[2.5rem] max-w-md w-full text-center"
-          >
-            <div className="w-20 h-20 bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
-              <CheckCircle2 className="text-emerald-500" size={40} />
-            </div>
-            <h2 className="text-2xl font-black text-white italic uppercase mb-2">¡Carta Añadida!</h2>
-            <p className="text-slate-500 mb-8">Hemos identificado y guardado la carta en tu inventario.</p>
-            
-            <div className="mb-8 flex justify-center">
-               <CardHologram card={result} />
-            </div>
+          </div>
+        )}
 
+        {result && (
+          <div className="bg-slate-900/50 border border-white/5 p-10 rounded-[3rem] max-w-md w-full text-center backdrop-blur-2xl shadow-2xl">
+            <div className="w-20 h-20 bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto mb-8 border border-emerald-500/20">
+              <CheckCircle2 className="text-emerald-400" size={40} />
+            </div>
+            <h2 className="text-3xl font-black text-white italic uppercase mb-3 tracking-tighter">¡Carta Añadida!</h2>
+            <p className="text-slate-500 mb-10 text-sm font-medium">Hemos analizado tu carta y ya está disponible en tu colección.</p>
+            
             <button 
               onClick={() => { setResult(null); startCamera(); }}
-              className="w-full bg-slate-800 text-white py-4 rounded-2xl font-black uppercase tracking-widest hover:bg-slate-700 transition-colors"
+              className="w-full bg-white text-black py-5 rounded-2xl font-black uppercase tracking-widest hover:bg-cyan-400 transition-all active:scale-95"
             >
               Escanear Otra
             </button>
             <a 
               href="/inventory"
-              className="block mt-4 text-slate-500 font-bold text-xs uppercase tracking-widest hover:text-cyan-400"
+              className="block mt-6 text-slate-500 font-black text-[10px] uppercase tracking-[0.3em] hover:text-white transition-colors"
             >
-              Ir a mi Colección
+              Ir a mi Inventario
             </a>
-          </motion.div>
+          </div>
         )}
-      </AnimatePresence>
+      </div>
 
       {error && (
-        <div className="mt-8 p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm font-medium">
+        <div className="fixed bottom-8 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl text-red-400 text-xs font-bold uppercase tracking-widest backdrop-blur-xl">
           {error}
         </div>
       )}

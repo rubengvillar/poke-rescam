@@ -4,12 +4,19 @@ import { onAuthStateChanged, User } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { TrainerCard } from './TrainerCard';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Package, Scan, Users, Trophy, LayoutGrid, Coins, Sparkles } from 'lucide-react';
+import { Package, Scan, Users, Trophy, LayoutGrid, Coins, Sparkles, Menu, X, LogOut, User as UserIcon, Settings } from 'lucide-react';
+import { signOut } from 'firebase/auth';
 
 export const DashboardComponent = () => {
   const [user, setUser] = useState<User | null>(null);
   const [trainerData, setTrainerData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+
+  const handleLogout = async () => {
+    await signOut(auth);
+    window.location.href = '/';
+  };
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (u) => {
@@ -32,6 +39,10 @@ export const DashboardComponent = () => {
             avatarUrl: u.photoURL || '',
             insignias: [],
             favoriteCardId: null,
+            attributes: { atk: 10, def: 10, lck: 10, nrg: 10 },
+            pointsAvailable: 5,
+            stats: { gamesWon: 0, winStreak: 0 },
+            items: { potion: 3, energyDrink: 2, luckCharm: 1 },
             createdAt: new Date().toISOString()
           };
           await setDoc(trainerRef, initialData);
@@ -52,26 +63,104 @@ export const DashboardComponent = () => {
   );
 
   return (
-    <div className="min-h-screen bg-slate-950 p-6 md:p-12">
+    <div className="min-h-screen bg-slate-950 p-6 md:p-12 relative overflow-hidden">
+      {/* Background Glows */}
+      <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
+         <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-cyan-500/10 blur-[120px] rounded-full" />
+         <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-purple-500/10 blur-[120px] rounded-full" />
+      </div>
+
+      {/* TOP NAVBAR */}
+      <header className="fixed top-0 left-0 right-0 z-40 px-8 py-6 flex justify-between items-center backdrop-blur-md bg-slate-950/50 border-b border-white/5">
+         <div className="flex items-center gap-4">
+            <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center">
+               <div className="w-4 h-4 bg-black rounded-full border-2 border-white" />
+            </div>
+            <h1 className="text-xl font-black text-white italic uppercase tracking-tighter">Rescam <span className="text-cyan-400">TCG</span></h1>
+         </div>
+         <button 
+           onClick={() => setIsMenuOpen(true)}
+           className="p-3 bg-slate-900 border border-white/10 rounded-2xl text-white hover:bg-white hover:text-black transition-all shadow-xl"
+         >
+            <Menu size={20} />
+         </button>
+      </header>
+
+      {/* SIDE MENU DRAWER */}
+      <AnimatePresence>
+        {isMenuOpen && (
+          <>
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsMenuOpen(false)}
+              className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50"
+            />
+            <motion.div 
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: "spring", damping: 25, stiffness: 200 }}
+              className="fixed top-0 right-0 bottom-0 w-full max-w-xs bg-slate-900 border-l border-white/10 z-[60] shadow-[-20px_0_50px_rgba(0,0,0,0.5)] p-8 flex flex-col"
+            >
+               <div className="flex justify-between items-center mb-12">
+                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.5em]">Menú Principal</span>
+                  <button onClick={() => setIsMenuOpen(false)} className="text-slate-500 hover:text-white transition-colors">
+                     <X size={24} />
+                  </button>
+               </div>
+
+               <div className="flex-1 space-y-4 overflow-y-auto pr-2 custom-scrollbar">
+                  <MenuLink icon={<UserIcon size={20}/>} label="Mi Perfil" href="#profile" onClick={() => setIsMenuOpen(false)} />
+                  <MenuLink icon={<LayoutGrid size={20}/>} label="Colección" href="/inventory" />
+                  <MenuLink icon={<Package size={20}/>} label="Tienda de Sobres" href="/packs" />
+                  <MenuLink icon={<Trophy size={20}/>} label="Mini Juegos" href="/games" />
+                  <MenuLink icon={<Users size={20}/>} label="Intercambio" href="/trading" />
+                  <MenuLink icon={<Scan size={20}/>} label="Escanear" href="/scan" />
+                  <div className="h-px bg-white/5 my-6" />
+                  <MenuLink icon={<Settings size={20}/>} label="Ajustes" href="#" />
+               </div>
+
+               <button 
+                 onClick={handleLogout}
+                 className="mt-auto flex items-center gap-4 p-4 rounded-2xl bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-all font-black uppercase text-xs tracking-widest border border-red-500/20 shadow-xl"
+               >
+                  <LogOut size={20} /> Cerrar Sesión
+               </button>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
       <AnimatePresence mode="wait">
         <motion.div 
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8 mt-24 items-start"
         >
           {/* Sidebar / Profile Section */}
           <div className="lg:col-span-4 space-y-6">
             <TrainerCard 
+              uid={user?.uid}
               trainerName={trainerData?.name}
               avatarUrl={trainerData?.avatarUrl}
               level={trainerData?.level}
               xp={trainerData?.xp}
               xpToNext={trainerData?.xpToNext}
               insignias={trainerData?.insignias}
+              attributes={trainerData?.attributes}
+              pointsAvailable={trainerData?.pointsAvailable}
+              stats={trainerData?.stats}
+              items={trainerData?.items}
             />
             
-            <div className="bg-slate-900/50 border border-slate-800 rounded-3xl p-6 backdrop-blur-xl">
-              <h3 className="text-slate-500 text-[10px] font-black uppercase tracking-[0.2em] mb-4">Economía</h3>
+            <div className="bg-slate-900/50 border border-slate-800 rounded-[2.5rem] p-8 backdrop-blur-xl shadow-2xl relative overflow-hidden group">
+              <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/5 to-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-1000" />
+              <h3 className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] mb-6 flex items-center gap-2">
+                 <Coins size={14} className="text-yellow-500" />
+                 Economía Global
+              </h3>
               <div className="flex justify-between items-center p-4 bg-slate-950/50 rounded-2xl mb-3 border border-slate-800/50">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 bg-yellow-500/20 rounded-lg flex items-center justify-center">
@@ -94,21 +183,7 @@ export const DashboardComponent = () => {
           </div>
 
           {/* Main Actions Section */}
-          <div className="lg:col-span-8 grid grid-cols-1 md:grid-cols-2 gap-4">
-            <ActionCard 
-              icon={<Package className="text-cyan-400" size={32} />}
-              title="Mis Sobres"
-              desc="Abre nuevos paquetes y expande tu colección"
-              gradient="from-cyan-500/20 to-blue-500/10"
-              href="/packs"
-            />
-            <ActionCard 
-              icon={<Scan className="text-emerald-400" size={32} />}
-              title="Escanear Carta"
-              desc="Añade cartas físicas usando tu cámara"
-              gradient="from-emerald-500/20 to-teal-500/10"
-              href="/scan"
-            />
+          <div className="lg:col-span-8 grid grid-cols-1 md:grid-cols-2 gap-6">
             <ActionCard 
               icon={<LayoutGrid className="text-orange-400" size={32} />}
               title="Colección"
@@ -123,10 +198,24 @@ export const DashboardComponent = () => {
               gradient="from-yellow-500/20 to-orange-500/10"
               href="/games"
             />
-             <ActionCard 
+            <ActionCard 
+              icon={<Scan className="text-emerald-400" size={32} />}
+              title="Escanear"
+              desc="Añade cartas usando tu cámara"
+              gradient="from-emerald-500/20 to-teal-500/10"
+              href="/scan"
+            />
+            <ActionCard 
+              icon={<Package className="text-cyan-400" size={32} />}
+              title="Tienda"
+              desc="Abre nuevos paquetes"
+              gradient="from-cyan-500/20 to-blue-500/10"
+              href="/packs"
+            />
+            <ActionCard 
               icon={<Users className="text-purple-400" size={32} />}
               title="Intercambio"
-              desc="Cambia cartas con tus amigos en tiempo real"
+              desc="Intercambia cartas con amigos"
               gradient="from-purple-500/20 to-pink-500/10"
               href="/trading"
               fullWidth
@@ -159,4 +248,15 @@ const ActionCard = ({ icon, title, desc, gradient, href, fullWidth = false }: an
       </div>
     </div>
   </motion.a>
+);
+
+const MenuLink = ({ icon, label, href, onClick }: any) => (
+  <a 
+    href={href} 
+    onClick={onClick}
+    className="flex items-center gap-4 p-4 rounded-2xl bg-slate-950/30 border border-white/5 text-slate-400 hover:text-white hover:bg-slate-800 hover:border-cyan-500/50 transition-all group"
+  >
+     <div className="p-2 bg-slate-900 rounded-xl group-hover:text-cyan-400 transition-colors shadow-lg">{icon}</div>
+     <span className="font-black uppercase text-[10px] tracking-widest">{label}</span>
+  </a>
 );
