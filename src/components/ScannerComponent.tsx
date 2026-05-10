@@ -45,7 +45,7 @@ const ScannerContent = () => {
     setStream(null);
   };
 
-  const processImage = async (imageSrc: string) => {
+  const processImage = async (imageSrc: string, condition: number = 10) => {
     setIsScanning(true);
     try {
       const { data: { text } } = await Tesseract.recognize(
@@ -53,59 +53,48 @@ const ScannerContent = () => {
         ocrLang,
         { logger: m => console.log(m) }
       );
-      console.log("OCR Result:", text);
-      
-      // Expanded keywords for better detection (English + Spanish)
-      const keywords = [
-        'HP', 'PS', 'STAGE', 'FASE', 'ABILITY', 'HABILIDAD', 'ATTACK', 'ATAQUE', 
-        'WEAKNESS', 'DEBILIDAD', 'RESISTANCE', 'RESISTENCIA', 'RETREAT', 'RETIRADA',
-        'EVOLVES', 'EVOLUCIONA', 'POKÉMON', 'TRAINER', 'ENTRENADOR', 'ENERGY', 'ENERGÍA', 
-        'BASIC', 'BÁSICO', 'LEVEL', 'ITEM', 'SUPPORTER', 'PARTIDARIO'
-      ];
       
       const normalizedText = text.toUpperCase();
-      // Look for at least one match or any number/number pattern (e.g. 120/150)
+      const typesList = ["Fire", "Water", "Grass", "Lightning", "Psychic", "Fighting", "Darkness", "Metal", "Fairy", "Dragon", "Colorless", "Fuego", "Agua", "Planta", "Rayo", "Psíquico", "Lucha", "Oscuridad", "Acero", "Hada", "Dragón"];
+      
+      const keywords = ['HP', 'PS', 'STAGE', 'FASE', 'ABILITY', 'HABILIDAD', 'ATTACK', 'ATAQUE', 'BASIC', 'POKÉMON'];
       const hasKeyword = keywords.some(k => normalizedText.includes(k));
       const hasNumberPattern = /\d+\/\d+/.test(normalizedText);
 
       if (!hasKeyword && !hasNumberPattern) {
         showToast("No se detectó una carta válida. Intenta con más luz.", "error");
-      const foundType = typesList.find(t => normalizedText.includes(t.toUpperCase())) || "Unknown";
-      const weaknessMatch = normalizedText.match(/(WEAKNESS|DEBILIDAD)\s*([A-Z]+)\s*([X×]\d+)/i);
+        setIsScanning(false);
+        return;
+      }
 
+      const foundType = typesList.find(t => normalizedText.includes(t.toUpperCase())) || "Unknown";
       const normalize = (str: string) => str.toUpperCase().replace(/[^A-Z0-9]/g, '').trim();
       const cleanName = normalize(normalizedText.split('\n')[0] || "");
       const cleanHP = normalizedText.match(/(\d+)\s*(HP|PS)/)?.[1] || "";
       const cleanNum = normalizedText.match(/(\d+\/\d+)/)?.[1] || "";
       
-      // Phase 2: API Integration (Multi-API Fallback)
       let apiCard = null;
       const cleanNumOnly = cleanNum.split('/')[0];
       
       try {
-        // Try Primary API (PokemonTCG.io)
         const response = await fetch(`https://api.pokemontcg.io/v2/cards?q=name:"${cleanName.toLowerCase()}" number:"${cleanNumOnly}"`);
         const data = await response.json();
         if (data.data && data.data.length > 0) {
           apiCard = data.data[0];
         } else {
-          // Try Fallback API (TCGdex)
-          console.log("TCGdex Fallback...");
           const resDex = await fetch(`https://api.tcgdex.net/v2/en/cards?name=${cleanName.toLowerCase()}&localId=${cleanNumOnly}`);
           const dataDex = await resDex.json();
           if (dataDex && dataDex.length > 0) {
-            // Get full details from TCGdex
             const resFull = await fetch(`https://api.tcgdex.net/v2/en/cards/${dataDex[0].id}`);
-            apiCard = await resFull.json();
-            // Map TCGdex format to our internal format
+            const dexData = await resFull.json();
             apiCard = {
-              id: apiCard.id,
-              name: apiCard.name,
-              hp: apiCard.hp,
-              types: apiCard.types,
-              images: { small: apiCard.image + '/low.jpg', large: apiCard.image + '/high.jpg' },
-              rarity: apiCard.rarity,
-              subtypes: [apiCard.stage]
+              id: dexData.id,
+              name: dexData.name,
+              hp: dexData.hp,
+              types: dexData.types,
+              images: { small: dexData.image + '/low.jpg', large: dexData.image + '/high.jpg' },
+              rarity: dexData.rarity,
+              subtypes: [dexData.stage]
             };
           }
         }
@@ -135,27 +124,22 @@ const ScannerContent = () => {
         }
       };
 
-      // Check for duplicates
       if (auth.currentUser) {
         const invRef = collection(db, `users/${auth.currentUser.uid}/inventory`);
         const q = query(invRef, where('id', '==', foundCard.id));
         const dupSnap = await getDocs(q);
-        
         if (!dupSnap.empty) {
           showToast("Ya tienes esta carta en tu colección", "info");
           setIsScanning(false);
           return;
         }
-
-        await addDoc(invRef, {
-          ...foundCard,
-          scannedAt: serverTimestamp()
-        });
+        await addDoc(invRef, { ...foundCard, scannedAt: serverTimestamp() });
       }
 
       setBatchScans(prev => [foundCard, ...prev]);
       showToast(`¡${foundCard.name} añadida!`, "success");
     } catch (err) {
+      console.error(err);
       showToast("Error al procesar la imagen", "error");
     } finally {
       setIsScanning(false);
@@ -163,7 +147,6 @@ const ScannerContent = () => {
   };
 
   const analyzeCardCondition = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
-    // Basic Heuristic: Check for "whitening" on edges and centering
     const getBrightness = (x: number, y: number, w: number, h: number) => {
       const pixels = ctx.getImageData(x, y, w, h).data;
       let sum = 0;
@@ -188,6 +171,8 @@ const ScannerContent = () => {
     const wearScore = avgEdge > 200 ? 3 : 5;
 
     return Math.round(centeringScore + wearScore);
+  };
+
   const captureFromVideo = () => {
     if (!videoRef.current || !canvasRef.current) return;
     
