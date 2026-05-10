@@ -101,7 +101,20 @@ const ScannerContent = () => {
       const cleanHP = normalizedText.match(/(\d+)\s*(HP|PS)/)?.[1] || "";
       const cleanNumMatch = normalizedText.match(/(\d+)\s*[\/\\]\s*(\d+)/);
       const cleanNumOnly = cleanNumMatch ? cleanNumMatch[1] : (normalizedText.match(/(\d{2,3})/)?.[1] || "");
-      const cleanName = normalizedText.split('\n')[0].replace(/[^A-Z]/g, '').trim();
+      const getLevenshtein = (a: string, b: string) => {
+        const matrix = [];
+        for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+        for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+        for (let i = 1; i <= b.length; i++) {
+          for (let j = 1; j <= a.length; j++) {
+            if (b.charAt(i - 1) === a.charAt(j - 1)) matrix[i][j] = matrix[i - 1][j - 1];
+            else matrix[i][j] = Math.min(matrix[i - 1][j - 1] + 1, matrix[i][j - 1] + 1, matrix[i - 1][j] + 1);
+          }
+        }
+        return matrix[b.length][a.length];
+      };
+
+      const nameCandidates = lines.slice(0, 3).map(l => l.replace(/[^A-Z0-9 ]/g, '').trim());
       
       const stageMatch = normalizedText.match(/(BASIC|STAGE 1|STAGE 2|FASE 1|FASE 2|LEVEL UP|RESTORED|VMAX|VSTAR|MEGA|GX|EX)/);
       const detectedStage = stageMatch ? stageMatch[0] : "";
@@ -110,7 +123,7 @@ const ScannerContent = () => {
       let apiCard = null;
       
       try {
-        console.log(`Rigor Search: #${cleanNumOnly}`);
+        console.log(`Rigor Search for #${cleanNumOnly} (Candidates: ${nameCandidates.join(', ')})`);
         const response = await fetch(`https://api.pokemontcg.io/v2/cards?q=number:"${cleanNumOnly}"`);
         const data = await response.json();
         
@@ -119,8 +132,18 @@ const ScannerContent = () => {
             let score = 0;
             const apiName = c.name.toUpperCase();
             
-            if (apiName.includes(cleanName)) score += 30;
-            else if (cleanName.includes(apiName.split(' ')[0])) score += 15;
+            // 1. Name Match (Strict & Levenshtein)
+            let bestNameScore = 0;
+            nameCandidates.forEach(cand => {
+              if (cand.length < 3) return;
+              const dist = getLevenshtein(apiName, cand);
+              const similarity = 1 - (dist / Math.max(apiName.length, cand.length));
+              if (similarity > 0.8) bestNameScore = Math.max(bestNameScore, 50);
+              else if (similarity > 0.6) bestNameScore = Math.max(bestNameScore, 25);
+              else if (apiName.includes(cand) || cand.includes(apiName)) bestNameScore = Math.max(bestNameScore, 20);
+            });
+            score += bestNameScore;
+            
             if (c.hp === cleanHP) score += 20;
             
             const apiTypes = (c.types || []).join(' ').toUpperCase();
@@ -133,10 +156,10 @@ const ScannerContent = () => {
             const attackMatches = apiAttacks.filter((aName: string) => 
               potentialAttacks.some(pa => pa.includes(aName))
             ).length;
-            score += (attackMatches * 10);
+            score += (attackMatches * 15);
 
-            // 6. VISUAL DNA COMPARISON (The Ultimate Rigor)
-            if (visualSignature) {
+            // 6. VISUAL DNA COMPARISON
+            if (visualSignature && bestNameScore > 0) {
                try {
                   const img = new Image();
                   img.crossOrigin = "Anonymous";
@@ -149,18 +172,15 @@ const ScannerContent = () => {
                     const ctx = canvas.getContext('2d');
                     if (ctx) {
                        ctx.drawImage(img, 0, 0, 100, 140);
-                       
                        const getZoneColor = (x: number, y: number, w: number, h: number) => {
                          const p = ctx.getImageData(x + w/2, y + h/2, 1, 1).data;
                          return { r: p[0], g: p[1], b: p[2] };
                        };
-
                        const apiSignature = {
                          header: getZoneColor(0, 0, 100, 14),
                          artwork: getZoneColor(20, 28, 60, 42),
                          body: getZoneColor(20, 84, 60, 28)
                        };
-
                        const colorDist = (c1: any, c2: any) => 
                          Math.sqrt(Math.pow(c1.r-c2.r,2) + Math.pow(c1.g-c2.g,2) + Math.pow(c1.b-c2.b,2));
 
@@ -168,9 +188,9 @@ const ScannerContent = () => {
                        const aDist = colorDist(visualSignature.artwork, apiSignature.artwork);
                        const bDist = colorDist(visualSignature.body, apiSignature.body);
 
-                       if (hDist < 50) score += 15; // Header color match
-                       if (aDist < 50) score += 20; // Artwork color match
-                       if (bDist < 50) score += 15; // Body color match
+                       if (hDist < 60) score += 15;
+                       if (aDist < 60) score += 20;
+                       if (bDist < 60) score += 15;
                     }
                   }
                } catch (e) { console.warn("Visual DNA failed", c.name); }
@@ -181,7 +201,8 @@ const ScannerContent = () => {
           }));
 
           scoredResults.sort((a: any, b: any) => b.rigorScore - a.rigorScore);
-          if (scoredResults[0].rigorScore > 25) apiCard = scoredResults[0];
+          console.log("Rigor Winner:", scoredResults[0].name, "Score:", scoredResults[0].rigorScore);
+          if (scoredResults[0].rigorScore >= 20) apiCard = scoredResults[0];
         }
 
         // TCGdex Fallback if rigor fails on primary
@@ -193,7 +214,16 @@ const ScannerContent = () => {
             const scoredDex = dataDex.map((c: any) => {
               let s = 0;
               const apiName = c.name.toUpperCase();
-              if (apiName.includes(cleanName)) s += 20;
+              
+              let bestDexNameScore = 0;
+              nameCandidates.forEach(cand => {
+                if (cand.length < 3) return;
+                const dist = getLevenshtein(apiName, cand);
+                const similarity = 1 - (dist / Math.max(apiName.length, cand.length));
+                if (similarity > 0.7) bestDexNameScore = Math.max(bestDexNameScore, 20);
+              });
+              s += bestDexNameScore;
+              
               if (c.stage && detectedStage && c.stage.toUpperCase().includes(detectedStage)) s += 10;
               return { ...c, rigorScore: s };
             });
