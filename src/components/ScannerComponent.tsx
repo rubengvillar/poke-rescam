@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Camera, RefreshCw, X, Sparkles, CheckCircle2, ChevronLeft, Upload, Image as ImageIcon } from 'lucide-react';
 import { ToastProvider, useToast } from './Toast';
 import { db, auth } from '../lib/firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, query, where, getDocs } from 'firebase/firestore';
 
 export const ScannerComponent = () => {
   return (
@@ -75,8 +75,10 @@ const ScannerContent = () => {
       const foundType = typesList.find(t => normalizedText.includes(t.toUpperCase())) || "Unknown";
       const weaknessMatch = normalizedText.match(/(WEAKNESS|DEBILIDAD)\s*([A-Z]+)\s*([X×]\d+)/i);
 
+      const cardId = `${normalizedText.split('\n')[0]}-${normalizedText.match(/\d+\/\d+/)?.[0] || 'unique'}`;
+      
       const foundCard = {
-        id: 'scanned-' + Date.now(),
+        id: cardId,
         name: normalizedText.split('\n')[0] || "Carta Escaneada",
         hp: normalizedText.match(/(\d+)\s*(HP|PS)/)?.[1] || "???",
         type: foundType,
@@ -93,8 +95,19 @@ const ScannerContent = () => {
         }
       };
 
+      // Check for duplicates
       if (auth.currentUser) {
-        await addDoc(collection(db, `users/${auth.currentUser.uid}/inventory`), {
+        const invRef = collection(db, `users/${auth.currentUser.uid}/inventory`);
+        const q = query(invRef, where('id', '==', foundCard.id));
+        const dupSnap = await getDocs(q);
+        
+        if (!dupSnap.empty) {
+          showToast("Ya tienes esta carta en tu colección", "info");
+          setIsScanning(false);
+          return;
+        }
+
+        await addDoc(invRef, {
           ...foundCard,
           scannedAt: serverTimestamp()
         });
