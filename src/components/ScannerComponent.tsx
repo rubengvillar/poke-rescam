@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import Tesseract from 'tesseract.js';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Camera, RefreshCw, X, Sparkles, CheckCircle2, ChevronLeft, Upload, Image as ImageIcon } from 'lucide-react';
+import { CheckCircle2, ChevronLeft, Upload, Image as ImageIcon, HelpCircle, Layout as LayoutIcon, Zap } from 'lucide-react';
 import { ToastProvider, useToast } from './Toast';
+import { ScannerHelpModal } from './ScannerHelpModal';
 import { db, auth } from '../lib/firebase';
 import { collection, addDoc, serverTimestamp, query, where, getDocs } from 'firebase/firestore';
 
@@ -23,6 +24,8 @@ const ScannerContent = () => {
   const [batchScans, setBatchScans] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [ocrLang, setOcrLang] = useState('spa+eng');
+  const [activeLayout, setActiveLayout] = useState<'modern' | 'vintage' | 'vmax'>('modern');
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -100,8 +103,16 @@ const ScannerContent = () => {
       const hasKeyword = keywords.some(k => normalizedText.includes(k) || headerText.includes(k));
       
       const cleanHP = headerText.match(/(\d+)\s*(HP|PS)/)?.[1] || normalizedText.match(/(\d+)\s*(HP|PS)/)?.[1] || "";
-      const footerNumMatch = footerText.match(/(\d+)\s*[\/\\]\s*(\d+)/) || footerText.match(/([A-Z0-9]{3,7})/);
-      const cleanNumOnly = footerNumMatch ? footerNumMatch[1] : (normalizedText.match(/(\d+)\s*[\/\\]\s*(\d+)/)?.[1] || normalizedText.match(/(\d{2,3})/)?.[1] || "");
+      
+      let cleanNumOnly = "";
+      if (activeLayout === 'vintage') {
+        const footerNumMatch = footerText.match(/(\d+)\s*[\/\\]\s*(\d+)/) || footerText.match(/([A-Z0-9]{3,7})/);
+        cleanNumOnly = footerNumMatch ? footerNumMatch[1] : (normalizedText.match(/(\d+)\s*[\/\\]\s*(\d+)/)?.[1] || normalizedText.match(/(\d{2,3})/)?.[1] || "");
+      } else {
+        // Modern usually has number at bottom left
+        const modernMatch = footerText.match(/(\d{3})\/(\d{3})/) || footerText.match(/([A-Z]{1,3}\s*\d{3})/);
+        cleanNumOnly = modernMatch ? modernMatch[1] : (footerText.match(/(\d+)/)?.[1] || "");
+      }
       
       const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 2);
       const typesList = ["Fire", "Water", "Grass", "Lightning", "Psychic", "Fighting", "Darkness", "Metal", "Fairy", "Dragon", "Colorless", "Fuego", "Agua", "Planta", "Rayo", "Psíquico", "Lucha", "Oscuridad", "Acero", "Hada", "Dragón"];
@@ -432,46 +443,97 @@ const ScannerContent = () => {
     const cv = (window as any).cv;
     try {
       let src = cv.imread(canvas);
-      let dst = new cv.Mat();
+      let gray = new cv.Mat();
+      cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
       
-      // Grayscale
-      cv.cvtColor(src, src, cv.COLOR_RGBA2GRAY, 0);
+      // Edge detection for Perspective Warp
+      let blurred = new cv.Mat();
+      cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
+      let edged = new cv.Mat();
+      cv.Canny(blurred, edged, 75, 200);
       
-      // Gaussian Blur to reduce noise before threshold
-      let ksize = new cv.Size(3, 3);
-      cv.GaussianBlur(src, src, ksize, 0, 0, cv.BORDER_DEFAULT);
+      let contours = new cv.MatVector();
+      let hierarchy = new cv.Mat();
+      cv.findContours(edged, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
       
-      // Softer Adaptive Threshold (Constant = 5)
-      cv.adaptiveThreshold(src, dst, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 15, 5);
-      
-      // Denoise
-      cv.medianBlur(dst, dst, 3);
-      
-      cv.imshow(canvas, dst);
-      src.delete(); dst.delete();
-    } catch (e) {
-      console.warn("OpenCV Processing failed, using basic filter", e);
-      // Fallback basic filter
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const data = imageData.data;
-      for (let i = 0; i < data.length; i += 4) {
-        const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
-        const val = avg > 120 ? 255 : 0;
-        data[i] = data[i + 1] = data[i + 2] = val;
+      let cardContour = null;
+      for (let i = 0; i < contours.size(); ++i) {
+        let cnt = contours.get(i);
+        let peri = cv.arcLength(cnt, true);
+        let approx = new cv.Mat();
+        cv.approxPolyDP(cnt, approx, 0.02 * peri, true);
+        
+        if (approx.rows === 4) {
+          cardContour = approx;
+          break;
+        }
       }
-      ctx.putImageData(imageData, 0, 0);
+
+      if (cardContour) {
+        // Warp Perspective
+        let pts1 = cv.matFromArray(4, 1, cv.CV_32FC2, [
+          cardContour.data32S[0], cardContour.data32S[1],
+          cardContour.data32S[2], cardContour.data32S[3],
+          cardContour.data32S[4], cardContour.data32S[5],
+          cardContour.data32S[6], cardContour.data32S[7]
+        ]);
+        
+        // Sort points: top-left, top-right, bottom-right, bottom-left
+        const pts = [];
+        for (let i = 0; i < 8; i += 2) pts.push({ x: pts1.data32F[i], y: pts1.data32F[i+1] });
+        pts.sort((a, b) => a.y - b.y);
+        const top = pts.slice(0, 2).sort((a, b) => a.x - b.x);
+        const bottom = pts.slice(2, 4).sort((a, b) => a.x - b.x);
+        
+        let pts_src = cv.matFromArray(4, 1, cv.CV_32FC2, [
+          top[0].x, top[0].y, top[1].x, top[1].y,
+          bottom[1].x, bottom[1].y, bottom[0].x, bottom[0].y
+        ]);
+        
+        let pts_dst = cv.matFromArray(4, 1, cv.CV_32FC2, [
+          0, 0, cropWidth, 0,
+          cropWidth, cropHeight, 0, cropHeight
+        ]);
+        
+        let M = cv.getPerspectiveTransform(pts_src, pts_dst);
+        let warped = new cv.Mat();
+        cv.warpPerspective(src, warped, M, new cv.Size(cropWidth, cropHeight));
+        
+        cv.imshow(canvas, warped);
+        src.delete(); gray.delete(); blurred.delete(); edged.delete(); contours.delete(); hierarchy.delete(); warped.delete(); pts_src.delete(); pts_dst.delete(); M.delete();
+      } else {
+        // Fallback: Just adaptive threshold if no contour found
+        let dst = new cv.Mat();
+        cv.adaptiveThreshold(gray, dst, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 11, 2);
+        cv.imshow(canvas, dst);
+        src.delete(); gray.delete(); blurred.delete(); edged.delete(); contours.delete(); hierarchy.delete(); dst.delete();
+      }
+    } catch (e) {
+      console.warn("OpenCV Processing failed", e);
     }
     
-    // 3. SEGMENTED CROPS (Triple Crop)
+    // 3. SEGMENTED CROPS (Triple Crop with Layout Awareness)
     const headerCanvas = document.createElement('canvas');
-    headerCanvas.width = cropWidth; headerCanvas.height = cropHeight * 0.2;
+    headerCanvas.width = cropWidth; headerCanvas.height = cropHeight * 0.18;
     const hCtx = headerCanvas.getContext('2d');
-    if (hCtx) hCtx.drawImage(canvas, 0, 0, cropWidth, cropHeight * 0.2, 0, 0, cropWidth, cropHeight * 0.2);
+    if (hCtx) hCtx.drawImage(canvas, 0, 0, cropWidth, cropHeight * 0.18, 0, 0, cropWidth, cropHeight * 0.18);
 
     const footerCanvas = document.createElement('canvas');
     footerCanvas.width = cropWidth; footerCanvas.height = cropHeight * 0.15;
     const fCtx = footerCanvas.getContext('2d');
-    if (fCtx) fCtx.drawImage(canvas, 0, cropHeight * 0.85, cropWidth, cropHeight * 0.15, 0, 0, cropWidth, cropHeight * 0.15);
+    
+    if (fCtx) {
+      if (activeLayout === 'modern') {
+        // Focus bottom-left
+        fCtx.drawImage(canvas, 0, cropHeight * 0.85, cropWidth * 0.5, cropHeight * 0.15, 0, 0, cropWidth * 0.5, cropHeight * 0.15);
+      } else if (activeLayout === 'vintage') {
+        // Focus bottom-right
+        fCtx.drawImage(canvas, cropWidth * 0.5, cropHeight * 0.85, cropWidth * 0.5, cropHeight * 0.15, 0, 0, cropWidth * 0.5, cropHeight * 0.15);
+      } else {
+        // Full width footer
+        fCtx.drawImage(canvas, 0, cropHeight * 0.8, cropWidth, cropHeight * 0.2, 0, 0, cropWidth, cropHeight * 0.2);
+      }
+    }
 
     const headerImg = headerCanvas.toDataURL('image/jpeg', 0.9);
     const footerImg = footerCanvas.toDataURL('image/jpeg', 0.9);
@@ -577,12 +639,21 @@ const ScannerContent = () => {
          <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-cyan-500/10 blur-[120px] rounded-full" />
       </div>
 
-      <header className="absolute top-8 left-8 z-[60]">
+      <header className="absolute top-8 left-8 right-8 z-[60] flex justify-between items-center">
         <a href="/dashboard" className="flex items-center gap-2 text-slate-500 hover:text-white transition-colors group">
           <ChevronLeft size={20} className="group-hover:-translate-x-1 transition-transform" />
           <span className="text-xs font-black uppercase tracking-widest text-white/50">Dashboard</span>
         </a>
+
+        <button 
+          onClick={() => setIsHelpOpen(true)}
+          className="w-10 h-10 bg-white/5 hover:bg-white/10 rounded-xl flex items-center justify-center text-slate-400 hover:text-white transition-all border border-white/5"
+        >
+          <HelpCircle size={20} />
+        </button>
       </header>
+
+      <ScannerHelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
 
       <input 
         type="file" 
@@ -637,6 +708,24 @@ const ScannerContent = () => {
             />
             <canvas ref={canvasRef} className="hidden" />
             
+            {/* LAYOUT SELECTOR OVERLAY */}
+            <div className="absolute top-6 left-0 w-full px-6 z-20 flex justify-center gap-2">
+               {[
+                 { id: 'modern', label: 'Moderno', icon: <Zap size={12} /> },
+                 { id: 'vintage', label: 'Vintage', icon: <LayoutIcon size={12} /> },
+                 { id: 'vmax', label: 'V/VMAX', icon: <ImageIcon size={12} /> }
+               ].map((l) => (
+                 <button 
+                  key={l.id}
+                  onClick={() => setActiveLayout(l.id as any)}
+                  className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all ${activeLayout === l.id ? 'bg-cyan-500 text-black shadow-[0_0_15px_rgba(6,182,212,0.4)]' : 'bg-black/40 text-white/60 backdrop-blur-md border border-white/5 hover:bg-black/60'}`}
+                 >
+                   {l.icon}
+                   {l.label}
+                 </button>
+               ))}
+            </div>
+
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                {/* Sombra exterior para enfocar el centro */}
                <div className="absolute inset-0 bg-slate-950/60" style={{ clipPath: 'polygon(0% 0%, 0% 100%, 15% 100%, 15% 15%, 85% 15%, 85% 85%, 15% 85%, 15% 100%, 100% 100%, 100% 0%)' }} />
@@ -661,7 +750,7 @@ const ScannerContent = () => {
 
                       <motion.div 
                         animate={{ opacity: isStable ? 1 : 0.3 }}
-                        className="absolute bottom-[2%] left-[5%] right-[5%] h-[12%] border border-dashed border-red-500/40 rounded-xl flex items-end justify-center pb-1"
+                        className={`absolute bottom-[2%] h-[12%] border border-dashed border-red-500/40 rounded-xl flex items-end justify-center pb-1 transition-all ${activeLayout === 'modern' ? 'left-[5%] w-[45%]' : activeLayout === 'vintage' ? 'right-[5%] w-[45%]' : 'left-[5%] right-[5%]'}`}
                       >
                          <span className="text-[7px] font-black text-red-500/60 uppercase tracking-widest">Nº Colección</span>
                       </motion.div>

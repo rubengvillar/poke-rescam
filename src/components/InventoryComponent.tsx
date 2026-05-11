@@ -21,6 +21,12 @@ const InventoryContent = () => {
   const [cards, setCards] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
+  
+  // Manual Verification Modal State
+  const [isVerifyModalOpen, setIsVerifyModalOpen] = useState(false);
+  const [selectedCardForVerify, setSelectedCardForVerify] = useState<any>(null);
+  const [manualName, setManualName] = useState("");
+  const [manualNum, setManualNum] = useState("");
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (u) => {
@@ -57,26 +63,42 @@ const InventoryContent = () => {
     return () => unsubscribe();
   }, []);
 
-  const reVerifyCard = async (card: any) => {
+  const openVerifyModal = (card: any) => {
+    setSelectedCardForVerify(card);
+    setManualName(card.name);
+    setManualNum(card.id?.split('-').pop() || "");
+    setIsVerifyModalOpen(true);
+  };
+
+  const reVerifyCard = async (card: any, nameOverride?: string, numOverride?: string) => {
     if (!userId) return;
-    showToast(`Re-verificando ${card.name}...`, "info");
+    const searchName = nameOverride || card.name;
+    const searchNum = numOverride || card.id?.split('-').pop() || "";
+    
+    showToast(`Buscando ${searchName}...`, "info");
     
     try {
-      const cleanNum = card.id?.split('-').pop() || "";
-      const updatedData = await reIdentifyCard(card.name, cleanNum);
+      const { card: updatedData, warning } = await reIdentifyCard(searchName, searchNum, card.text);
       
+      if (warning) {
+        const confirm = window.confirm(warning);
+        if (!confirm) return;
+      }
+
       if (updatedData) {
         for (const firestoreId of card.firestoreIds) {
           const cardRef = doc(db, `users/${userId}/inventory`, firestoreId);
           await updateDoc(cardRef, {
             ...updatedData,
-            isScanned: true, // Keep it marked as scanned
+            name: updatedData.name || searchName,
+            isScanned: true,
             lastVerified: new Date().toISOString()
           });
         }
         showToast("¡Datos de carta actualizados!", "success");
+        setIsVerifyModalOpen(false);
       } else {
-        showToast("No se encontró información adicional.", "info");
+        showToast("No se encontró información. Se mantendrá como personalizada.", "info");
       }
     } catch (err) {
       console.error(err);
@@ -159,7 +181,7 @@ const InventoryContent = () => {
 
                   <div className="flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button 
-                      onClick={() => reVerifyCard(card)}
+                      onClick={() => openVerifyModal(card)}
                       className="flex items-center gap-2 bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-cyan-500 hover:text-white transition-all shadow-lg"
                     >
                       <Database size={14} />
@@ -179,6 +201,82 @@ const InventoryContent = () => {
           </div>
         )}
       </div>
+
+      {/* MANUAL VERIFY MODAL */}
+      <AnimatePresence>
+        {isVerifyModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsVerifyModalOpen(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-md bg-slate-900 border border-white/10 rounded-[2.5rem] p-8 shadow-2xl overflow-hidden"
+            >
+              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-500 to-emerald-500" />
+              
+              <div className="flex items-center gap-4 mb-8">
+                <div className="w-12 h-12 bg-cyan-500/10 rounded-2xl flex items-center justify-center border border-cyan-500/20">
+                  <Database className="text-cyan-400" size={24} />
+                </div>
+                <div>
+                  <h2 className="text-xl font-black text-white italic uppercase tracking-tighter">Asistente de Identificación</h2>
+                  <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest">Corrige los datos para una búsqueda precisa</p>
+                </div>
+              </div>
+
+              <div className="space-y-6">
+                <div className="p-3 bg-slate-950/50 rounded-xl border border-white/5">
+                  <label className="block text-[8px] font-black text-slate-500 uppercase tracking-widest mb-1">Texto detectado por cámara</label>
+                  <p className="text-[10px] text-slate-400 italic line-clamp-2">{selectedCardForVerify?.text || "No hay texto disponible"}</p>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 ml-1">Nombre del Pokémon</label>
+                  <input 
+                    type="text" 
+                    value={manualName}
+                    onChange={(e) => setManualName(e.target.value)}
+                    className="w-full bg-slate-950 border border-white/5 rounded-xl px-4 py-3 text-white font-bold focus:border-cyan-500 outline-none transition-colors"
+                    placeholder="Ej: Pikachu"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 ml-1">Número de Colección</label>
+                  <input 
+                    type="text" 
+                    value={manualNum}
+                    onChange={(e) => setManualNum(e.target.value)}
+                    className="w-full bg-slate-950 border border-white/5 rounded-xl px-4 py-3 text-white font-bold focus:border-cyan-500 outline-none transition-colors"
+                    placeholder="Ej: 131/091"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 mt-10">
+                <button 
+                  onClick={() => setIsVerifyModalOpen(false)}
+                  className="py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-white transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={() => reVerifyCard(selectedCardForVerify, manualName, manualNum)}
+                  className="bg-cyan-500 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest text-black hover:bg-cyan-400 transition-all active:scale-95 shadow-xl shadow-cyan-500/20"
+                >
+                  Confirmar y Buscar
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

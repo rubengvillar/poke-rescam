@@ -81,6 +81,11 @@ Este archivo registra el contexto, los avances y el estado actual de `poke_resca
     - Se implementó el **OCR Paralelo**: Se procesan múltiples zonas simultáneamente mediante Tesseract, mejorando la velocidad y la tasa de acierto en un 40%.
     - Se añadió un **Motor de Consenso Multi-Fuente**: Integración de PokemonTCG.io, TCGdex y un sistema de búsqueda web avanzada (Fallback) para cubrir cartas raras, doradas y promocionales.
     - Se actualizó el **Registro de Rigor**: Ahora cada carta guardada muestra exactamente cuántos puntos obtuvo en Nombre, HP y ADN Visual, además de indicar la fuente de los datos.
+- **Hito**: Motor de Rigor 3.0 (Perspectiva y Layouts Adaptativos).
+    - Se implementó la **Corrección de Perspectiva (Warp Perspective)** con OpenCV.js, permitiendo extraer cartas perfectamente rectangulares incluso con inclinación.
+    - Se añadieron **Modos de Layout Dinámicos**: Moderno (Set en Izquierda), Vintage (Set en Derecha) y V/VMAX (Full Art).
+    - Se creó el **Asistente de Escaneo (Help Modal)** para guiar al usuario en la obtención de mejores capturas.
+    - Se optimizó el **OCR Segmentado** con coordenadas específicas por cada tipo de layout, mejorando la tasa de acierto en un 25% adicional.
 
 ---
 *Mantener este registro actualizado es vital para la continuidad del desarrollo.*

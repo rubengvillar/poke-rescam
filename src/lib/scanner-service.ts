@@ -40,19 +40,57 @@ export const fetchPokeAPI = async (name: string) => {
   }
 };
 
-export const reIdentifyCard = async (cardName: string, cardNum: string) => {
+export const reIdentifyCard = async (cardName: string, cardNum: string, originalOcrText: string = "") => {
   let apiCard = null;
-  let log = "";
+  let warning = null;
 
-  // 1. Primary API
-  const res = await fetch(`https://api.pokemontcg.io/v2/cards?q=name:"${cardName}" number:"${cardNum}"`);
+  // 0. RIGOR CHECK: Verify if user input matches something in the original OCR
+  const normalizedOcr = originalOcrText.toUpperCase();
+  const normalizedManual = cardName.toUpperCase();
+  
+  const words = normalizedOcr.split(/\s+/);
+  let maxSim = 0;
+  words.forEach(word => {
+    if (word.length < 3) return;
+    const dist = getLevenshtein(normalizedManual, word);
+    const sim = 1 - (dist / Math.max(normalizedManual.length, word.length));
+    if (sim > maxSim) maxSim = sim;
+  });
+
+  // Option B: Warning if similarity < 40%
+  if (originalOcrText && maxSim < 0.4) {
+    warning = `La cámara detectó algo muy diferente. ¿Estás seguro de que es un ${cardName}?`;
+  }
+
+  // 1. Primary API (Direct search by Name and Number)
+  const query = `name:"${cardName}" number:"${cardNum}"`;
+  const res = await fetch(`https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(query)}`);
   const data = await res.json();
+  
   if (data.data && data.data[0]) {
     apiCard = data.data[0];
-    log = "Re-verificado con PokemonTCG.io";
+    apiCard.rigorLog = `Validación Manual: Similitud OCR ${Math.round(maxSim * 100)}%${warning ? ' (Advertencia)' : ''}`;
+    apiCard.verifiedByUser = true;
   } 
 
-  // 2. Fallback PokeAPI (for stats/sprites if custom)
+  // 2. TCGdex Fallback (Direct)
+  if (!apiCard) {
+    const resDex = await fetch(`https://api.tcgdex.net/v2/en/cards?localId=${cardNum}`);
+    const dataDex = await resDex.json();
+    if (dataDex && dataDex.length > 0) {
+      // Find the one that matches name best
+      const match = dataDex.find((c: any) => c.name.toLowerCase().includes(cardName.toLowerCase())) || dataDex[0];
+      const resFull = await fetch(`https://api.tcgdex.net/v2/en/cards/${match.id}`);
+      const dexFull = await resFull.json();
+      apiCard = {
+        ...dexFull,
+        images: { small: dexFull.image + '/low.jpg', large: dexFull.image + '/high.jpg' },
+        rigorLog: "Validación Manual (TCGdex): Datos confirmados por el usuario."
+      };
+    }
+  }
+
+  // 3. Fallback PokeAPI (for stats/sprites if custom)
   if (!apiCard) {
     const pokeData = await fetchPokeAPI(cardName);
     if (pokeData) {
@@ -61,10 +99,10 @@ export const reIdentifyCard = async (cardName: string, cardNum: string) => {
         id: `custom-${cardName}-${cardNum}`,
         isCustom: true,
         // No overwrite images object here to preserve the original capture
-        rigorLog: "Datos básicos enriquecidos vía PokeAPI"
+        rigorLog: "Validación Manual (PokeAPI): Datos enriquecidos vía PokeAPI"
       };
     }
   }
 
-  return apiCard;
+  return { card: apiCard, warning };
 };
