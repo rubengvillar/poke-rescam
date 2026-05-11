@@ -4,8 +4,9 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { collection, query, getDocs, doc, deleteDoc, updateDoc, increment, onSnapshot } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CardHologram } from './CardHologram';
-import { Trash2, Sparkles, Filter, ChevronLeft } from 'lucide-react';
+import { Trash2, Sparkles, Filter, ChevronLeft, RefreshCw, Database } from 'lucide-react';
 import { ToastProvider, useToast } from './Toast';
+import { reIdentifyCard } from '../lib/scanner-service';
 
 export const InventoryComponent = () => {
   return (
@@ -55,6 +56,33 @@ const InventoryContent = () => {
     });
     return () => unsubscribe();
   }, []);
+
+  const reVerifyCard = async (card: any) => {
+    if (!userId) return;
+    showToast(`Re-verificando ${card.name}...`, "info");
+    
+    try {
+      const cleanNum = card.id?.split('-').pop() || "";
+      const updatedData = await reIdentifyCard(card.name, cleanNum);
+      
+      if (updatedData) {
+        for (const firestoreId of card.firestoreIds) {
+          const cardRef = doc(db, `users/${userId}/inventory`, firestoreId);
+          await updateDoc(cardRef, {
+            ...updatedData,
+            isScanned: true, // Keep it marked as scanned
+            lastVerified: new Date().toISOString()
+          });
+        }
+        showToast("¡Datos de carta actualizados!", "success");
+      } else {
+        showToast("No se encontró información adicional.", "info");
+      }
+    } catch (err) {
+      console.error(err);
+      showToast("Error al re-verificar", "error");
+    }
+  };
 
   const burnCard = async (cardId: string) => {
     if (!userId) return;
@@ -129,7 +157,14 @@ const InventoryContent = () => {
                     </div>
                   )}
 
-                  <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button 
+                      onClick={() => reVerifyCard(card)}
+                      className="flex items-center gap-2 bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-cyan-500 hover:text-white transition-all shadow-lg"
+                    >
+                      <Database size={14} />
+                      Re-verificar
+                    </button>
                     <button 
                       onClick={() => burnCard(card.firestoreIds[0])}
                       className="flex items-center gap-2 bg-red-500/10 text-red-400 border border-red-500/20 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all"
