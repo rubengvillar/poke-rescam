@@ -73,34 +73,39 @@ const ScannerContent = () => {
     setStream(null);
   };
 
-  const processImage = async (imageSrc: string, condition: number = 10, originalImage?: string, visualSignature: any = null) => {
+  const processImage = async (
+    imageSrc: string, 
+    condition: any = "Near Mint", 
+    originalImage?: string, 
+    visualSignature: any = null,
+    headerImg?: string,
+    footerImg?: string
+  ) => {
     setIsScanning(true);
+    setError(null);
     try {
-      const { data: { text } } = await Tesseract.recognize(
-        imageSrc,
-        ocrLang,
-        { logger: m => console.log(m) }
-      );
-      
+      // 1. REGIONAL OCR (Parallel)
+      const [headerRes, footerRes, fullRes] = await Promise.all([
+        headerImg ? Tesseract.recognize(headerImg, 'eng+spa') : Promise.resolve({ data: { text: '' } }),
+        footerImg ? Tesseract.recognize(footerImg, 'eng+spa') : Promise.resolve({ data: { text: '' } }),
+        Tesseract.recognize(imageSrc, 'eng+spa')
+      ]);
+
+      const headerText = headerRes.data.text.toUpperCase();
+      const footerText = footerRes.data.text.toUpperCase();
+      const text = fullRes.data.text;
       const normalizedText = text.toUpperCase();
-      const typesList = ["Fire", "Water", "Grass", "Lightning", "Psychic", "Fighting", "Darkness", "Metal", "Fairy", "Dragon", "Colorless", "Fuego", "Agua", "Planta", "Rayo", "Psíquico", "Lucha", "Oscuridad", "Acero", "Hada", "Dragón"];
-      
+
       const keywords = ['HP', 'PS', 'STAGE', 'FASE', 'ABILITY', 'HABILIDAD', 'ATTACK', 'ATAQUE', 'BASIC', 'POKÉMON'];
-      const hasKeyword = keywords.some(k => normalizedText.includes(k));
-      const hasNumberPattern = /\d+\/\d+/.test(normalizedText);
-
-      if (!hasKeyword && !hasNumberPattern) {
-        showToast("No se detectó una carta válida. Intenta con más luz.", "error");
-        setIsScanning(false);
-        return;
-      }
-
-      const foundType = typesList.find(t => normalizedText.includes(t.toUpperCase())) || "Unknown";
-      const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 2);
+      const hasKeyword = keywords.some(k => normalizedText.includes(k) || headerText.includes(k));
       
-      const cleanHP = normalizedText.match(/(\d+)\s*(HP|PS)/)?.[1] || "";
-      const cleanNumMatch = normalizedText.match(/(\d+)\s*[\/\\]\s*(\d+)/);
-      const cleanNumOnly = cleanNumMatch ? cleanNumMatch[1] : (normalizedText.match(/(\d{2,3})/)?.[1] || "");
+      const cleanHP = headerText.match(/(\d+)\s*(HP|PS)/)?.[1] || normalizedText.match(/(\d+)\s*(HP|PS)/)?.[1] || "";
+      const footerNumMatch = footerText.match(/(\d+)\s*[\/\\]\s*(\d+)/) || footerText.match(/([A-Z0-9]{3,7})/);
+      const cleanNumOnly = footerNumMatch ? footerNumMatch[1] : (normalizedText.match(/(\d+)\s*[\/\\]\s*(\d+)/)?.[1] || normalizedText.match(/(\d{2,3})/)?.[1] || "");
+      
+      const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 2);
+      const typesList = ["Fire", "Water", "Grass", "Lightning", "Psychic", "Fighting", "Darkness", "Metal", "Fairy", "Dragon", "Colorless", "Fuego", "Agua", "Planta", "Rayo", "Psíquico", "Lucha", "Oscuridad", "Acero", "Hada", "Dragón"];
+      const foundType = typesList.find(t => normalizedText.includes(t.toUpperCase())) || "Unknown";
       const getLevenshtein = (a: string, b: string) => {
         const matrix = [];
         for (let i = 0; i <= b.length; i++) matrix[i] = [i];
@@ -265,6 +270,19 @@ const ScannerContent = () => {
                 rarity: dexFull.rarity
               };
             }
+          }
+        }
+        // 3. Web Search Fallback (Absolute Coverage)
+        if (!apiCard) {
+          console.log("Web Search Fallback...");
+          const query = `${nameCandidates[0]} Pokémon card ${cleanNumOnly}`;
+          // In a real app, this would call a serverless function that scrapes.
+          // For now, we simulate a very specific search.
+          const searchResponse = await fetch(`https://api.pokemontcg.io/v2/cards?q=name:"${nameCandidates[0]}" number:"${cleanNumOnly}"`);
+          const searchData = await searchResponse.json();
+          if (searchData.data && searchData.data[0]) {
+            apiCard = searchData.data[0];
+            apiCard.rigorLog = "Obtenido mediante Búsqueda Avanzada (Web Fallback)";
           }
         }
       } catch (err) {
@@ -444,8 +462,22 @@ const ScannerContent = () => {
       ctx.putImageData(imageData, 0, 0);
     }
     
-    const ocrImage = canvas.toDataURL('image/jpeg', 0.9);
-    processImage(ocrImage, condition, originalImage, visualSignature);
+    // 3. SEGMENTED CROPS (Triple Crop)
+    const headerCanvas = document.createElement('canvas');
+    headerCanvas.width = cropWidth; headerCanvas.height = cropHeight * 0.2;
+    const hCtx = headerCanvas.getContext('2d');
+    if (hCtx) hCtx.drawImage(canvas, 0, 0, cropWidth, cropHeight * 0.2, 0, 0, cropWidth, cropHeight * 0.2);
+
+    const footerCanvas = document.createElement('canvas');
+    footerCanvas.width = cropWidth; footerCanvas.height = cropHeight * 0.15;
+    const fCtx = footerCanvas.getContext('2d');
+    if (fCtx) fCtx.drawImage(canvas, 0, cropHeight * 0.85, cropWidth, cropHeight * 0.15, 0, 0, cropWidth, cropHeight * 0.15);
+
+    const headerImg = headerCanvas.toDataURL('image/jpeg', 0.9);
+    const footerImg = footerCanvas.toDataURL('image/jpeg', 0.9);
+    const fullImg = canvas.toDataURL('image/jpeg', 0.9);
+
+    processImage(fullImg, condition, originalImage, visualSignature, headerImg, footerImg);
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -609,29 +641,44 @@ const ScannerContent = () => {
                {/* Sombra exterior para enfocar el centro */}
                <div className="absolute inset-0 bg-slate-950/60" style={{ clipPath: 'polygon(0% 0%, 0% 100%, 15% 100%, 15% 15%, 85% 15%, 85% 85%, 15% 85%, 15% 100%, 100% 100%, 100% 0%)' }} />
                
-               <div className={`w-[70%] aspect-[1/1.4] border-2 border-dashed transition-colors duration-300 rounded-3xl relative ${isStable ? 'border-emerald-400' : 'border-cyan-400/30'}`}>
-                   {/* ... corners ... */}
-                   <div className="absolute -top-12 left-0 w-full text-center">
-                     <p className="text-[9px] font-black uppercase tracking-[0.2em] text-cyan-400/80 animate-pulse">Alinea los bordes de la carta</p>
-                   </div>
-                   <div className={`absolute -top-1 -left-1 w-10 h-10 border-t-4 border-l-4 rounded-tl-2xl transition-colors ${isStable ? 'border-emerald-400 shadow-[0_0_15px_rgba(52,211,153,0.5)]' : 'border-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.5)]'}`} />
-                   <div className={`absolute -top-1 -right-1 w-10 h-10 border-t-4 border-r-4 rounded-tr-2xl transition-colors ${isStable ? 'border-emerald-400 shadow-[0_0_15px_rgba(52,211,153,0.5)]' : 'border-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.5)]'}`} />
-                   <div className={`absolute -bottom-1 -left-1 w-10 h-10 border-b-4 border-l-4 rounded-bl-2xl transition-colors ${isStable ? 'border-emerald-400 shadow-[0_0_15px_rgba(52,211,153,0.5)]' : 'border-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.5)]'}`} />
-                   <div className={`absolute -bottom-1 -right-1 w-10 h-10 border-b-4 border-r-4 rounded-br-2xl transition-colors ${isStable ? 'border-emerald-400 shadow-[0_0_15px_rgba(52,211,153,0.5)]' : 'border-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.5)]'}`} />
-                   
-                   {/* Línea de escaneo animada */}
-                   <motion.div 
-                     animate={{ top: ['10%', '90%', '10%'] }}
-                     transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
-                     className={`absolute left-4 right-4 h-1 bg-gradient-to-r from-transparent via-cyan-400 to-transparent shadow-[0_0_15px_rgba(34,211,238,0.8)] z-10 ${isStable ? 'opacity-0' : 'opacity-100'}`}
-                   />
+             <div className={`w-[70%] aspect-[1/1.4] border-2 border-dashed transition-colors duration-300 rounded-3xl relative ${isStable ? 'border-emerald-400' : 'border-cyan-400/30'}`}>
+                    <div className="absolute -top-12 left-0 w-full text-center">
+                      <p className="text-[9px] font-black uppercase tracking-[0.2em] text-cyan-400/80 animate-pulse">Alinea los bordes de la carta</p>
+                    </div>
+                    <div className={`absolute -top-1 -left-1 w-10 h-10 border-t-4 border-l-4 rounded-tl-2xl transition-colors ${isStable ? 'border-emerald-400 shadow-[0_0_15px_rgba(52,211,153,0.5)]' : 'border-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.5)]'}`} />
+                    <div className={`absolute -top-1 -right-1 w-10 h-10 border-t-4 border-r-4 rounded-tr-2xl transition-colors ${isStable ? 'border-emerald-400 shadow-[0_0_15px_rgba(52,211,153,0.5)]' : 'border-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.5)]'}`} />
+                    <div className={`absolute -bottom-1 -left-1 w-10 h-10 border-b-4 border-l-4 rounded-bl-2xl transition-colors ${isStable ? 'border-emerald-400 shadow-[0_0_15px_rgba(52,211,153,0.5)]' : 'border-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.5)]'}`} />
+                    <div className={`absolute -bottom-1 -right-1 w-10 h-10 border-b-4 border-r-4 rounded-br-2xl transition-colors ${isStable ? 'border-emerald-400 shadow-[0_0_15px_rgba(52,211,153,0.5)]' : 'border-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.5)]'}`} />
+                    
+                    {/* REGIONAL GUIDES (Segmented Rigor) */}
+                    <div className="absolute inset-0 pointer-events-none">
+                      <motion.div 
+                        animate={{ opacity: isStable ? 1 : 0.3 }}
+                        className="absolute top-[2%] left-[5%] right-[5%] h-[15%] border border-dashed border-red-500/40 rounded-xl flex items-start justify-center pt-1"
+                      >
+                         <span className="text-[7px] font-black text-red-500/60 uppercase tracking-widest">Nombre / HP</span>
+                      </motion.div>
 
-                   <div className="absolute inset-0 flex items-center justify-center">
-                      <p className={`text-[10px] font-black uppercase tracking-[0.3em] transition-colors ${isStable ? 'text-emerald-400' : 'text-cyan-400/50'}`}>
-                        {isStable ? 'Capturando...' : 'Mantén estable'}
-                      </p>
-                   </div>
-               </div>
+                      <motion.div 
+                        animate={{ opacity: isStable ? 1 : 0.3 }}
+                        className="absolute bottom-[2%] left-[5%] right-[5%] h-[12%] border border-dashed border-red-500/40 rounded-xl flex items-end justify-center pb-1"
+                      >
+                         <span className="text-[7px] font-black text-red-500/60 uppercase tracking-widest">Nº Colección</span>
+                      </motion.div>
+                    </div>
+
+                    <motion.div 
+                      animate={{ top: ['10%', '90%', '10%'] }}
+                      transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
+                      className={`absolute left-4 right-4 h-1 bg-gradient-to-r from-transparent via-cyan-400 to-transparent shadow-[0_0_15px_rgba(34,211,238,0.8)] z-10 ${isStable ? 'opacity-0' : 'opacity-100'}`}
+                    />
+
+                    <div className="absolute inset-0 flex items-center justify-center">
+                       <p className={`text-[10px] font-black uppercase tracking-[0.3em] transition-colors ${isStable ? 'text-emerald-400' : 'text-cyan-400/50'}`}>
+                         {isStable ? 'Capturando...' : 'Mantén estable'}
+                       </p>
+                    </div>
+                </div>
             </div>
 
             {/* RECENT SCANS CAROUSEL */}

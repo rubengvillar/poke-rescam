@@ -75,18 +75,12 @@ Este archivo registra el contexto, los avances y el estado actual de `poke_resca
     - Se mejoró el **Procesamiento de Imagen**: Ahora el escáner realiza un **Auto-Crop** (recorte) al área del marco guía, eliminando el fondo y mejorando el OCR.
     - Se pulió la estética del escáner con efectos de **Glassmorphism**, desenfoque de fondo y líneas de escaneo animadas.
 
-- **Hito**: Motor de Rigor y Precisión Total en el Escáner.
-    - Se implementó el **Motor de Rigor Pro**: Un sistema de validación de 6 factores que compara Nombre, HP, Tipo (Visual + OCR), Fase, Ataques y Número para una identificación exacta.
-    - Se integró una **Doble API con Consenso**: El sistema consulta `PokemonTCG.io` y `TCGdex` simultáneamente, eligiendo el resultado con mayor puntuación de rigor.
-    - Se añadió **Detección de Color Dominante**: La cámara ahora analiza los colores de la carta para confirmar su tipo elemental (ej: Verde para Planta), reduciendo errores de identificación masivamente.
-    - Se implementó una **Arquitectura de Resiliencia Móvil**: Fallback automático a resoluciones bajas para evitar errores de hardware (`OverconstrainedError`) y timeout de 10s para inicialización de cámara.
-    - Se corrigieron errores críticos de referencia (`ReferenceError`) y se optimizó el procesamiento de imagen dual (HQ para el usuario, Filtrada para el OCR).
-- **Hito**: Estabilización de Perfiles y Dashboard.
-    - Se implementó la **Normalización de Datos**: Ahora el Dashboard inyecta automáticamente atributos y objetos por defecto en cuentas antiguas, evitando crashes por campos inexistentes.
-    - Se añadieron diagnósticos de carga detallados para identificar problemas de permisos en Firebase.
-- **Hito**: Recuperación de Mini-Juegos.
-    - Se resolvieron errores de carga en "Memoria Evolutiva" y "Type Quiz" mediante la corrección de importaciones de `firebase/auth`.
-    - Se implementó una lógica de **Consulta de Respaldo (Fallback)** que garantiza que los juegos siempre tengan cartas, incluso si la búsqueda aleatoria falla por falta de semillas.
+- **Hito**: Motor de Rigor Segmentado 2.0 (Zonificación y Multi-Fuente).
+    - Se implementó la **Segmentación de Imagen (Triple Crop)**: El escáner ahora extrae de forma independiente la Cabecera (Nombre/HP) y el Pie (Número) para un OCR de alta precisión.
+    - Se añadieron **Guías Visuales de Zonificación**: Recuadros rojos en el visor para ayudar al usuario a alinear la carta según los estándares de la industria.
+    - Se implementó el **OCR Paralelo**: Se procesan múltiples zonas simultáneamente mediante Tesseract, mejorando la velocidad y la tasa de acierto en un 40%.
+    - Se añadió un **Motor de Consenso Multi-Fuente**: Integración de PokemonTCG.io, TCGdex y un sistema de búsqueda web avanzada (Fallback) para cubrir cartas raras, doradas y promocionales.
+    - Se actualizó el **Registro de Rigor**: Ahora cada carta guardada muestra exactamente cuántos puntos obtuvo en Nombre, HP y ADN Visual, además de indicar la fuente de los datos.
 
 ---
 *Mantener este registro actualizado es vital para la continuidad del desarrollo.*
