@@ -211,13 +211,19 @@ const ScannerContent = () => {
                } catch (e) { console.warn("Visual DNA failed", c.name); }
             }
 
+            const log = `Nombre: ${bestNameScore}, HP: ${c.hp === cleanHP ? 20 : 0}, Fase: ${detectedStage && apiStage.includes(detectedStage) ? 15 : 0}, ADN: ${score - (bestNameScore + (c.hp === cleanHP ? 20 : 0) + (detectedStage && apiStage.includes(detectedStage) ? 15 : 0))}`;
+            
             if (c.supertype === 'Energy' && (cleanHP || detectedStage)) score -= 70;
-            return { ...c, rigorScore: score };
+            return { ...c, rigorScore: score, rigorLog: log };
           }));
 
-          scoredResults.sort((a: any, b: any) => b.rigorScore - a.rigorScore);
-          console.log("Rigor Winner:", scoredResults[0].name, "Score:", scoredResults[0].rigorScore);
-          if (scoredResults[0].rigorScore >= 30) apiCard = scoredResults[0];
+          const validResults = scoredResults.filter((r: any) => r.rigorScore > 0);
+          validResults.sort((a: any, b: any) => b.rigorScore - a.rigorScore);
+          
+          if (validResults.length > 0) {
+            console.log("Rigor Winner:", validResults[0].name, "Score:", validResults[0].rigorScore);
+            if (validResults[0].rigorScore >= 30) apiCard = validResults[0];
+          }
         }
 
         // TCGdex Fallback if rigor fails on primary
@@ -242,20 +248,23 @@ const ScannerContent = () => {
               if (c.stage && detectedStage && c.stage.toUpperCase().includes(detectedStage)) s += 10;
               return { ...c, rigorScore: s };
             });
-            scoredDex.sort((a: any, b: any) => b.rigorScore - a.rigorScore);
+            const validDex = scoredDex.filter((r: any) => r.rigorScore > 0);
+            validDex.sort((a: any, b: any) => b.rigorScore - a.rigorScore);
             
-            const bestDex = scoredDex[0];
-            const resFull = await fetch(`https://api.tcgdex.net/v2/en/cards/${bestDex.id}`);
-            const dexFull = await resFull.json();
-            
-            apiCard = {
-              ...dexFull,
-              hp: dexFull.hp,
-              types: dexFull.types,
-              images: { small: dexFull.image + '/low.jpg', large: dexFull.image + '/high.jpg' },
-              subtypes: [dexFull.stage],
-              rarity: dexFull.rarity
-            };
+            if (validDex.length > 0 && validDex[0].rigorScore >= 20) {
+              const bestDex = validDex[0];
+              const resFull = await fetch(`https://api.tcgdex.net/v2/en/cards/${bestDex.id}`);
+              const dexFull = await resFull.json();
+              
+              apiCard = {
+                ...dexFull,
+                hp: dexFull.hp,
+                types: dexFull.types,
+                images: { small: dexFull.image + '/low.jpg', large: dexFull.image + '/high.jpg' },
+                subtypes: [dexFull.stage],
+                rarity: dexFull.rarity
+              };
+            }
           }
         }
       } catch (err) {
@@ -265,24 +274,28 @@ const ScannerContent = () => {
       const finalImage = originalImage || imageSrc;
 
       const foundCard = {
-        id: apiCard?.id || `card-${cleanName}-${cleanHP}-${cleanNumOnly}`,
-        name: apiCard?.name || normalizedText.split('\n')[0] || "Carta Escaneada",
+        id: apiCard?.id || `card-${nameCandidates[0] || 'Unknown'}-${cleanHP}-${cleanNumOnly}`,
+        name: apiCard?.name || nameCandidates[0] || "Carta Escaneada",
         hp: apiCard?.hp || cleanHP || "???",
         type: apiCard?.types?.[0] || foundType,
         text: text.substring(0, 300),
         images: { 
           small: apiCard?.images?.small || finalImage,
-          large: apiCard?.images?.large || finalImage
+          large: apiCard?.images?.large || finalImage,
+          isFallback: !apiCard
         },
         rarity: apiCard?.rarity || "Custom",
         isCustom: !apiCard,
         grade: condition,
+        isScanned: true,
+        rigorScore: apiCard?.rigorScore || 0,
+        rigorLog: apiCard?.rigorLog || "No se encontró coincidencia oficial. Guardada como captura personalizada.",
         attributes: {
           hp: apiCard?.hp || cleanHP || "???",
           stage: apiCard?.subtypes?.[0] || "Basic",
           type: apiCard?.types?.[0] || foundType,
           weakness: apiCard?.weaknesses?.[0] ? `${apiCard.weaknesses[0].type} ${apiCard.weaknesses[0].value}` : "None",
-          attacks: apiCard?.attacks?.map((a: any) => a.name) || text.split('\n').filter(l => l.length > 20).slice(0, 2)
+          attacks: apiCard?.attacks?.map((a: any) => a.name) || lines.filter(l => l.length > 20).slice(0, 2)
         }
       };
 
@@ -291,15 +304,17 @@ const ScannerContent = () => {
         const q = query(invRef, where('id', '==', foundCard.id));
         const dupSnap = await getDocs(q);
         if (!dupSnap.empty) {
-          showToast("Ya tienes esta carta en tu colección", "info");
-          setIsScanning(false);
-          return;
+          showToast("¡Ya tienes esta carta en tu colección!", "info");
+        } else {
+          await addDoc(invRef, {
+            ...foundCard,
+            scannedAt: serverTimestamp()
+          });
+          showToast(`¡${foundCard.name} guardada en tu inventario!`, "success");
         }
-        await addDoc(invRef, { ...foundCard, scannedAt: serverTimestamp() });
       }
 
       setBatchScans(prev => [foundCard, ...prev]);
-      showToast(`¡${foundCard.name} añadida!`, "success");
     } catch (err) {
       console.error(err);
       showToast("Error al procesar la imagen", "error");

@@ -14,6 +14,9 @@ interface CardHologramProps {
     types?: string[];
     cryUrl?: string;
     animatedSprite?: string;
+    isScanned?: boolean;
+    rigorScore?: number;
+    rigorLog?: string;
   };
 }
 
@@ -108,6 +111,13 @@ export const CardHologram: React.FC<CardHologramProps> = ({ card }) => {
             />
           )}
 
+          {card.isScanned && (
+            <div className="absolute top-12 right-2 z-20 bg-black/60 backdrop-blur-md px-2 py-1 rounded-md border border-white/20 flex items-center gap-1">
+              <div className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse" />
+              <span className="text-[7px] font-black text-white uppercase tracking-tighter">Custom Scanned</span>
+            </div>
+          )}
+
           {isRare && (
             <motion.div
               style={{ background: "linear-gradient(135deg, transparent 0%, rgba(255,255,255,0.2) 50%, transparent 100%)", backgroundSize: "200% 200%" }}
@@ -156,6 +166,15 @@ export const CardHologram: React.FC<CardHologramProps> = ({ card }) => {
                   </div>
                 ))}
              </div>
+
+             {card.isScanned && (
+                <div className="p-2 bg-cyan-500/5 rounded-lg border border-cyan-500/20">
+                  <p className="text-[8px] font-black text-cyan-500 uppercase flex items-center gap-1">
+                    <Sparkles size={8} /> Registro de Rigor
+                  </p>
+                  <p className="text-[9px] text-slate-400 font-medium leading-tight mt-1">{card.rigorLog}</p>
+                </div>
+             )}
           </div>
 
           <div className="mt-auto pt-4 border-t border-slate-800 flex justify-between items-center">
