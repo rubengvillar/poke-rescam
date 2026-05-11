@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import Tesseract from 'tesseract.js';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CheckCircle2, ChevronLeft, Upload, Image as ImageIcon, HelpCircle, Layout as LayoutIcon, Zap } from 'lucide-react';
+import { Camera, RefreshCw, X, Sparkles, CheckCircle2, ChevronLeft, Upload, Image as ImageIcon, HelpCircle, Layout as LayoutIcon, Zap } from 'lucide-react';
 import { ToastProvider, useToast } from './Toast';
 import { ScannerHelpModal } from './ScannerHelpModal';
 import { db, auth } from '../lib/firebase';

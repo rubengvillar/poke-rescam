@@ -86,6 +86,7 @@ Este archivo registra el contexto, los avances y el estado actual de `poke_resca
     - Se añadieron **Modos de Layout Dinámicos**: Moderno (Set en Izquierda), Vintage (Set en Derecha) y V/VMAX (Full Art).
     - Se creó el **Asistente de Escaneo (Help Modal)** para guiar al usuario en la obtención de mejores capturas.
     - Se optimizó el **OCR Segmentado** con coordenadas específicas por cada tipo de layout, mejorando la tasa de acierto en un 25% adicional.
+    - **Estabilización**: Se corrigió un error de importación de iconos (`Camera`, `RefreshCw`, etc.) que causaba el fallo de renderizado en la página de escaneo.
 
 ---
 *Mantener este registro actualizado es vital para la continuidad del desarrollo.*
