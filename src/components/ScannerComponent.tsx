@@ -172,14 +172,17 @@ const ScannerContent = () => {
                     const ctx = canvas.getContext('2d');
                     if (ctx) {
                        ctx.drawImage(img, 0, 0, 100, 140);
-                       const getZoneColor = (x: number, y: number, w: number, h: number) => {
-                         const p = ctx.getImageData(x + w/2, y + h/2, 1, 1).data;
-                         return { r: p[0], g: p[1], b: p[2] };
+                       const getZoneAverage = (x: number, y: number, w: number, h: number) => {
+                         const pixels = ctx.getImageData(x, y, w, h).data;
+                         let r=0, g=0, b=0;
+                         for(let i=0; i<pixels.length; i+=16) { r+=pixels[i]; g+=pixels[i+1]; b+=pixels[i+2]; }
+                         const count = pixels.length / 16;
+                         return { r: r/count, g: g/count, b: b/count };
                        };
                        const apiSignature = {
-                         header: getZoneColor(0, 0, 100, 14),
-                         artwork: getZoneColor(20, 28, 60, 42),
-                         body: getZoneColor(20, 84, 60, 28)
+                         header: getZoneAverage(0, 0, 100, 14),
+                         artwork: getZoneAverage(20, 28, 60, 42),
+                         body: getZoneAverage(20, 84, 60, 28)
                        };
                        const colorDist = (c1: any, c2: any) => 
                          Math.sqrt(Math.pow(c1.r-c2.r,2) + Math.pow(c1.g-c2.g,2) + Math.pow(c1.b-c2.b,2));
@@ -188,9 +191,14 @@ const ScannerContent = () => {
                        const aDist = colorDist(visualSignature.artwork, apiSignature.artwork);
                        const bDist = colorDist(visualSignature.body, apiSignature.body);
 
-                       if (hDist < 60) score += 15;
-                       if (aDist < 60) score += 20;
-                       if (bDist < 60) score += 15;
+                       if (hDist < 50) score += 15;
+                       else if (hDist > 120) score -= 30; // PENALTY
+
+                       if (aDist < 50) score += 20;
+                       else if (aDist > 120) score -= 40; // BIG PENALTY
+
+                       if (bDist < 50) score += 15;
+                       else if (bDist > 120) score -= 30;
                     }
                   }
                } catch (e) { console.warn("Visual DNA failed", c.name); }
@@ -321,15 +329,18 @@ const ScannerContent = () => {
   };
 
   const getVisualSignature = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
-    const getZoneColor = (x: number, y: number, w: number, h: number) => {
-      const p = ctx.getImageData(x + w/2, y + h/2, 1, 1).data;
-      return { r: p[0], g: p[1], b: p[2] };
+    const getZoneAverage = (x: number, y: number, w: number, h: number) => {
+      const pixels = ctx.getImageData(x, y, w, h).data;
+      let r=0, g=0, b=0;
+      for(let i=0; i<pixels.length; i+=16) { r+=pixels[i]; g+=pixels[i+1]; b+=pixels[i+2]; }
+      const count = pixels.length / 16;
+      return { r: r/count, g: g/count, b: b/count };
     };
 
     return {
-      header: getZoneColor(0, 0, width, height * 0.1),
-      artwork: getZoneColor(width * 0.2, height * 0.2, width * 0.6, height * 0.3),
-      body: getZoneColor(width * 0.2, height * 0.6, width * 0.6, height * 0.2)
+      header: getZoneAverage(0, 0, width, height * 0.1),
+      artwork: getZoneAverage(width * 0.2, height * 0.2, width * 0.6, height * 0.3),
+      body: getZoneAverage(width * 0.2, height * 0.6, width * 0.6, height * 0.2)
     };
   };
 
