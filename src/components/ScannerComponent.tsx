@@ -138,10 +138,12 @@ const ScannerContent = () => {
               if (cand.length < 3) return;
               const dist = getLevenshtein(apiName, cand);
               const similarity = 1 - (dist / Math.max(apiName.length, cand.length));
-              if (similarity > 0.8) bestNameScore = Math.max(bestNameScore, 50);
-              else if (similarity > 0.6) bestNameScore = Math.max(bestNameScore, 25);
-              else if (apiName.includes(cand) || cand.includes(apiName)) bestNameScore = Math.max(bestNameScore, 20);
+              if (similarity > 0.8) bestNameScore = Math.max(bestNameScore, 60);
+              else if (similarity > 0.6) bestNameScore = Math.max(bestNameScore, 30);
             });
+            
+            // CRITICAL: If name doesn't match at all, this is probably not the card
+            if (bestNameScore === 0) return { ...c, rigorScore: -100 };
             score += bestNameScore;
             
             if (c.hp === cleanHP) score += 20;
@@ -150,7 +152,12 @@ const ScannerContent = () => {
             if (apiTypes.includes(foundType.toUpperCase())) score += 15;
             
             const apiStage = (c.subtypes || []).join(' ').toUpperCase();
-            if (detectedStage && apiStage.includes(detectedStage)) score += 10;
+            if (detectedStage && apiStage.includes(detectedStage)) score += 15;
+
+            // 4. V-Card / Special Rarity Lock
+            const isSpecial = /(V|VMAX|VSTAR|GX|EX|TERA)/.test(apiStage) || /(V|VMAX|VSTAR|GX|EX|TERA)/.test(apiName);
+            const detectedSpecial = /(V|VMAX|VSTAR|GX|EX|TERA)/.test(detectedStage) || /(V|VMAX|VSTAR|GX|EX|TERA)/.test(normalizedText);
+            if (isSpecial !== detectedSpecial) score -= 50;
             
             const apiAttacks = (c.attacks || []).map((a: any) => a.name.toUpperCase());
             const attackMatches = apiAttacks.filter((aName: string) => 
@@ -159,7 +166,7 @@ const ScannerContent = () => {
             score += (attackMatches * 15);
 
             // 6. VISUAL DNA COMPARISON
-            if (visualSignature && bestNameScore > 0) {
+            if (visualSignature) {
                try {
                   const img = new Image();
                   img.crossOrigin = "Anonymous";
@@ -192,10 +199,10 @@ const ScannerContent = () => {
                        const bDist = colorDist(visualSignature.body, apiSignature.body);
 
                        if (hDist < 50) score += 15;
-                       else if (hDist > 120) score -= 30; // PENALTY
+                       else if (hDist > 120) score -= 30; 
 
                        if (aDist < 50) score += 20;
-                       else if (aDist > 120) score -= 40; // BIG PENALTY
+                       else if (aDist > 120) score -= 40; 
 
                        if (bDist < 50) score += 15;
                        else if (bDist > 120) score -= 30;
@@ -204,13 +211,13 @@ const ScannerContent = () => {
                } catch (e) { console.warn("Visual DNA failed", c.name); }
             }
 
-            if (c.supertype === 'Energy' && (cleanHP || detectedStage)) score -= 60;
+            if (c.supertype === 'Energy' && (cleanHP || detectedStage)) score -= 70;
             return { ...c, rigorScore: score };
           }));
 
           scoredResults.sort((a: any, b: any) => b.rigorScore - a.rigorScore);
           console.log("Rigor Winner:", scoredResults[0].name, "Score:", scoredResults[0].rigorScore);
-          if (scoredResults[0].rigorScore >= 20) apiCard = scoredResults[0];
+          if (scoredResults[0].rigorScore >= 30) apiCard = scoredResults[0];
         }
 
         // TCGdex Fallback if rigor fails on primary
@@ -397,8 +404,12 @@ const ScannerContent = () => {
       // Grayscale
       cv.cvtColor(src, src, cv.COLOR_RGBA2GRAY, 0);
       
-      // Adaptive Threshold (The Secret for OCR)
-      cv.adaptiveThreshold(src, dst, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 11, 2);
+      // Gaussian Blur to reduce noise before threshold
+      let ksize = new cv.Size(3, 3);
+      cv.GaussianBlur(src, src, ksize, 0, 0, cv.BORDER_DEFAULT);
+      
+      // Softer Adaptive Threshold (Constant = 5)
+      cv.adaptiveThreshold(src, dst, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 15, 5);
       
       // Denoise
       cv.medianBlur(dst, dst, 3);
